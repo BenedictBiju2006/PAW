@@ -1,13 +1,14 @@
 "use client";
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import {
-  Collection,
-  Field,
-  Interface,
-  Workspace,
-} from "../../../packages/core/schema";
+import { Collection, Field, Workspace } from "../../../packages/core/schema";
 import { api } from "../lib/api";
-import { DataView, InterfaceRenderer } from "./renderer";
+import { DataView } from "./renderer";
+import dynamic from "next/dynamic";
+import InterfaceBuilder from "./interface-builder";
+import { isEmptyInterface } from "../../../packages/a2ui/document";
+const InterfaceRenderer = dynamic(() => import("./a2ui-runtime"), {
+  ssr: false,
+});
 
 type Summary = Pick<Workspace, "id" | "name" | "revision" | "updated_at">;
 export default function Dashboard({ configured }: { configured: boolean }) {
@@ -23,15 +24,12 @@ export default function Dashboard({ configured }: { configured: boolean }) {
     "workspace",
   );
   const [epoch, setEpoch] = useState(0);
-  const [draft, setDraft] = useState("");
   const [selectedCollection, setSelectedCollection] = useState("");
   const [signup, setSignup] = useState(false);
   const [newWorkspace, setNewWorkspace] = useState(false);
   const [newCollection, setNewCollection] = useState(false);
+  const [account, setAccount] = useState(false);
   const [renaming, setRenaming] = useState(false);
-  const [history, setHistory] = useState<
-    { revision: number; definition: Interface }[]
-  >([]);
   const report = useCallback((message: string) => setError(message), []);
   async function run(action: () => Promise<void>) {
     setBusy(true);
@@ -79,9 +77,7 @@ export default function Dashboard({ configured }: { configured: boolean }) {
     ]);
     setActive(workspace);
     setCollections(items);
-    setDraft(JSON.stringify(workspace.interface, null, 2));
     setSelectedCollection(items[0]?.id ?? "");
-    setHistory([]);
     setTab("workspace");
     setEpoch((e) => e + 1);
     window.history.replaceState(null, "", `?workspace=${id}`);
@@ -122,8 +118,6 @@ export default function Dashboard({ configured }: { configured: boolean }) {
       { definition, revision: active.revision },
     );
     setActive(workspace);
-    setDraft(JSON.stringify(workspace.interface, null, 2));
-    setHistory([]);
     setNotice("Interface saved. Your records are preserved.");
     await refreshList();
   }
@@ -155,40 +149,31 @@ export default function Dashboard({ configured }: { configured: boolean }) {
   if (!user)
     return (
       <main className="auth-shell">
-        <div className="auth-story">
-          <Brand />
-          <span className="eyebrow">
-            A LITTLE STRUCTURE. A LOT OF POSSIBILITY.
-          </span>
-          <h1>
-            Your ideas.
-            <br />A place to grow.
-          </h1>
-          <p>
-            Make a workspace, give your data a home, and shape an interface that
-            feels like yours.
-          </p>
-          <div className="story-art" aria-hidden="true">
-            <div>
-              Collections <span>↗</span>
-            </div>
-            <div>
-              Interfaces <span>◫</span>
-            </div>
-            <div>
-              Everything in its place <span>✳</span>
-            </div>
-          </div>
-          <small>Persistent by design. Private to you.</small>
-        </div>
         <section className="auth-card">
-          <span className="eyebrow">WELCOME TO PAW</span>
-          <h2>{signup ? "Make yourself at home." : "Good to see you."}</h2>
-          <p>
-            {signup
-              ? "Create an account to start your first workspace."
-              : "Sign in to pick up where you left off."}
-          </p>
+          <h1>PAW</h1>
+          <p>{signup ? "Create your account." : "Welcome back."}</p>
+          <div className="auth-modes">
+            <button
+              className={!signup ? "primary" : ""}
+              onClick={() => {
+                setSignup(false);
+                setError("");
+                setNotice("");
+              }}
+            >
+              Sign in
+            </button>
+            <button
+              className={signup ? "primary" : ""}
+              onClick={() => {
+                setSignup(true);
+                setError("");
+                setNotice("");
+              }}
+            >
+              Sign up
+            </button>
+          </div>
           {error && (
             <div role="alert" className="error">
               {error}
@@ -223,26 +208,9 @@ export default function Dashboard({ configured }: { configured: boolean }) {
               />
             </label>
             <button disabled={busy} className="primary">
-              {busy
-                ? "Please wait…"
-                : signup
-                  ? "Create account ↗"
-                  : "Sign in ↗"}
+              {busy ? "Please wait…" : signup ? "Create account" : "Sign in"}
             </button>
           </form>
-          <p className="auth-switch">
-            {signup ? "Already have an account?" : "New here?"}{" "}
-            <button
-              className="link"
-              onClick={() => {
-                setSignup(!signup);
-                setError("");
-                setNotice("");
-              }}
-            >
-              {signup ? "Sign in" : "Create an account"}
-            </button>
-          </p>
         </section>
       </main>
     );
@@ -263,7 +231,7 @@ export default function Dashboard({ configured }: { configured: boolean }) {
             setError("");
           }}
         >
-          ◫ <span>All workspaces</span>
+          <span>All workspaces</span>
           <span className="count">{workspaces.length}</span>
         </button>
         <div className="sidebar-label row">
@@ -285,19 +253,17 @@ export default function Dashboard({ configured }: { configured: boolean }) {
               disabled={busy}
               onClick={() => open(w.id)}
             >
-              <span className="workspace-dot" />{" "}
               <span className="truncate">{w.name}</span>
             </button>
           ))}
         </nav>
         <div className="sidebar-bottom">
-          <div className="avatar">{user.email[0].toUpperCase()}</div>
           <div className="truncate">
             <strong>Your account</strong>
             <small>{user.email}</small>
           </div>
           <button className="icon" aria-label="Sign out" onClick={signout}>
-            ↗
+            Sign out
           </button>
         </div>
       </aside>
@@ -307,7 +273,7 @@ export default function Dashboard({ configured }: { configured: boolean }) {
             Personal workspace{" "}
             <span className="muted"> / {active?.name ?? "Overview"}</span>
           </span>
-          <span className="private-badge">● Private to you</span>
+          <button onClick={() => setAccount(true)}>Account</button>
           <button className="mobile-signout" onClick={signout}>
             Sign out
           </button>
@@ -334,14 +300,8 @@ export default function Dashboard({ configured }: { configured: boolean }) {
             <>
               <div className="page-heading">
                 <div>
-                  <span className="eyebrow">A PLACE FOR WHAT’S NEXT</span>
-                  <h1>
-                    Your workspaces<span className="accent">.</span>
-                  </h1>
-                  <p>
-                    Small ideas, big plans. Keep them all in a space of their
-                    own.
-                  </p>
+                  <h1>Your workspaces</h1>
+                  <p>Create and manage your private workspaces.</p>
                 </div>
                 <button
                   className="primary"
@@ -365,16 +325,12 @@ export default function Dashboard({ configured }: { configured: boolean }) {
                     onClick={() => open(w.id)}
                     disabled={busy}
                   >
-                    <div className={`card-symbol tone-${index % 3}`}>
-                      {["◫", "✳", "◈"][index % 3]}
-                    </div>
                     <h3>{w.name}</h3>
                     <p>Open your collections and interface</p>
                     <div className="card-footer">
                       <span>
                         Updated {new Date(w.updated_at).toLocaleDateString()}
                       </span>
-                      <span>↗</span>
                     </div>
                   </button>
                 ))}
@@ -382,29 +338,14 @@ export default function Dashboard({ configured }: { configured: boolean }) {
                   className="new-card"
                   onClick={() => (setError(""), setNewWorkspace(true))}
                 >
-                  <span>+</span>
                   <strong>Create a workspace</strong>
-                  <p>A blank canvas for your next idea</p>
                 </button>
               </div>
-              {!workspaces.length && (
-                <div className="welcome-note">
-                  <span>✳</span>
-                  <div>
-                    <h3>Start with a little possibility.</h3>
-                    <p>
-                      Create an empty workspace, add a collection, then choose
-                      how you want to see and use your data.
-                    </p>
-                  </div>
-                </div>
-              )}
             </>
           ) : (
             <>
               <div className="page-heading">
                 <div>
-                  <span className="eyebrow">YOUR PERSISTENT WORKSPACE</span>
                   <h1>{active.name}</h1>
                   <p>
                     {collections.length} collection
@@ -446,15 +387,20 @@ export default function Dashboard({ configured }: { configured: boolean }) {
                     onClick={() => setTab(t)}
                   >
                     {t === "workspace"
-                      ? "◫  Workspace"
+                      ? "Workspace"
                       : t === "data"
-                        ? "▤  Collections & data"
-                        : "⌘  Interface builder"}
+                        ? "Collections & data"
+                        : "Interface builder"}
                   </button>
                 ))}
               </div>
               {tab === "workspace" &&
-                (active.interface.nodes.length ? (
+                (active.interfaceError ? (
+                  <div className="error" role="alert">
+                    {active.interfaceError} Open Interface Builder to recover
+                    the original definition.
+                  </div>
+                ) : !isEmptyInterface(active.interface) ? (
                   <InterfaceRenderer
                     key={`${active.id}-${epoch}`}
                     workspaceId={active.id}
@@ -464,8 +410,7 @@ export default function Dashboard({ configured }: { configured: boolean }) {
                   />
                 ) : (
                   <section className="empty-state">
-                    <div className="empty-symbol">◫</div>
-                    <h2>A space that’s yours to shape.</h2>
+                    <h2>No interface yet</h2>
                     <p>
                       Add a collection to store your data, then build an
                       interface with forms, tables, text, and charts.
@@ -483,7 +428,7 @@ export default function Dashboard({ configured }: { configured: boolean }) {
                       className="link"
                       onClick={() => setTab("interface")}
                     >
-                      Open interface builder ↗
+                      Open interface builder
                     </button>
                   </section>
                 ))}
@@ -545,7 +490,7 @@ export default function Dashboard({ configured }: { configured: boolean }) {
                     </>
                   ) : (
                     <div className="empty-state">
-                      <h2>Give your data a home.</h2>
+                      <h2>No collections yet</h2>
                       <p>
                         A collection defines the fields your records can hold.
                       </p>
@@ -560,159 +505,50 @@ export default function Dashboard({ configured }: { configured: boolean }) {
                 </>
               )}
               {tab === "interface" && (
-                <section className="builder">
-                  <div>
-                    <h2>Shape your workspace</h2>
-                    <p>
-                      Add components, then save your interface. Saving or
-                      removing components keeps your records intact.
-                    </p>
-                    <div className="builder-tools">
-                      <button
-                        onClick={() => {
-                          try {
-                            const d = JSON.parse(draft);
-                            d.nodes.push({
-                              id: `heading_${Date.now()}`,
-                              type: "heading",
-                              text: "My workspace",
-                            });
-                            setDraft(JSON.stringify(d, null, 2));
-                          } catch {
-                            setError("Fix the interface JSON first.");
-                          }
-                        }}
-                      >
-                        + Heading
-                      </button>
-                      {collections.map((c) => (
-                        <button
-                          key={c.id}
-                          onClick={() => {
-                            try {
-                              const d = JSON.parse(draft);
-                              d.nodes.push(
-                                {
-                                  id: `form_${Date.now()}`,
-                                  type: "form",
-                                  collectionId: c.id,
-                                },
-                                {
-                                  id: `table_${Date.now()}`,
-                                  type: "table",
-                                  collectionId: c.id,
-                                },
-                              );
-                              setDraft(JSON.stringify(d, null, 2));
-                            } catch {
-                              setError("Fix the interface JSON first.");
-                            }
-                          }}
-                        >
-                          + {c.name} form & table
-                        </button>
-                      ))}
-                    </div>
-                    <label>
-                      Interface definition
-                      <textarea
-                        className="code-editor"
-                        spellCheck={false}
-                        value={draft}
-                        onChange={(e) => setDraft(e.target.value)}
-                        rows={18}
-                      />
-                    </label>
-                    <div className="row">
-                      <button
-                        className="primary"
-                        disabled={busy}
-                        onClick={() => run(() => save(JSON.parse(draft)))}
-                      >
-                        Save interface
-                      </button>
-                      <button
-                        onClick={() =>
-                          run(async () =>
-                            setHistory(
-                              await api(`workspaces/${active.id}/revisions`),
-                            ),
-                          )
-                        }
-                      >
-                        Revision history
-                      </button>
-                      <button onClick={() => open(active.id)}>
-                        Reload saved version
-                      </button>
-                    </div>
-                    {history.length > 0 && (
-                      <div className="history">
-                        {history.map((r) => (
-                          <div className="row" key={r.revision}>
-                            <span>Revision {r.revision}</span>
-                            <button
-                              disabled={busy || r.revision === active.revision}
-                              onClick={() => run(() => save(r.definition))}
-                            >
-                              Restore as new revision
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <aside className="builder-guide">
-                    <span className="eyebrow">COMPONENT GUIDE</span>
-                    <h3>
-                      Simple pieces.
-                      <br />
-                      Endless arrangements.
-                    </h3>
-                    <p>
-                      <strong>heading / text</strong>
-                      <br />
-                      Use “text” for the content.
-                    </p>
-                    <p>
-                      <strong>form / table / list</strong>
-                      <br />
-                      Bind to a collection with “collectionId”. Forms use the
-                      collection’s typed fields.
-                    </p>
-                    <p>
-                      <strong>chart</strong>
-                      <br />
-                      Set “collectionId” and “field” to show value counts.
-                    </p>
-                    <p>
-                      <strong>container / tabs</strong>
-                      <br />
-                      Nest components inside “children”.
-                    </p>
-                    <p>
-                      <strong>button</strong>
-                      <br />
-                      Refreshes bound data. Set its “text” label.
-                    </p>
-                    <p>
-                      Every component needs a unique “id”. Version is always 1.
-                    </p>
-                  </aside>
-                </section>
+                <InterfaceBuilder
+                  workspace={active}
+                  collections={collections}
+                  busy={busy}
+                  save={save}
+                  reload={() => open(active.id)}
+                />
               )}
             </>
           )}
         </main>
-        <footer className="app-footer">
-          PAW <span>Make room for possibility.</span>
-          <span>Persistent Agentic Workspaces</span>
-        </footer>
       </div>
+      {account && (
+        <div className="modal-backdrop">
+          <section
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Account settings"
+          >
+            <button
+              className="modal-close"
+              aria-label="Close"
+              onClick={() => setAccount(false)}
+            >
+              Close
+            </button>
+            <h2>Account</h2>
+            <p>Signed in as {user.email}</p>
+            <button
+              onClick={async () => {
+                await signout();
+                setAccount(false);
+              }}
+            >
+              Sign out
+            </button>
+          </section>
+        </div>
+      )}
       {newWorkspace && (
         <NameDialog
           error={error}
-          title="A new place to begin."
+          title="Create workspace"
           label="Workspace name"
           submit="Create workspace"
           busy={busy}
@@ -728,7 +564,6 @@ export default function Dashboard({ configured }: { configured: boolean }) {
               window.history.replaceState(null, "", `?workspace=${w.id}`);
               setCollections([]);
               setSelectedCollection("");
-              setDraft(JSON.stringify(w.interface, null, 2));
               setTab("workspace");
             })
           }
@@ -778,12 +613,7 @@ export default function Dashboard({ configured }: { configured: boolean }) {
   );
 }
 function Brand() {
-  return (
-    <div className="brand">
-      <span className="brand-mark">✳</span> paw
-      <span className="brand-period">.</span>
-    </div>
-  );
+  return <div className="brand">PAW</div>;
 }
 function NameDialog({
   error,
@@ -872,7 +702,7 @@ function CollectionDialog({
         <button className="modal-close icon" onClick={close} aria-label="Close">
           ×
         </button>
-        <h2>A home for your data.</h2>
+        <h2>Create collection</h2>
         {error && (
           <div className="error" role="alert">
             {error}

@@ -1,10 +1,16 @@
+import {
+  emptyInterface,
+  inspectInterface,
+  parseInterface,
+} from "../a2ui/document";
+import { upgradeInterface } from "../a2ui/legacy";
+import { catalogDocument } from "../a2ui/catalog";
 import { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import {
   Collection,
   fieldsSchema,
   id,
-  interfaceSchema,
   name,
   validateBindings,
   validateData,
@@ -14,8 +20,9 @@ export class ServiceError extends Error {
   constructor(
     message: string,
     public status = 400,
+    cause?: unknown,
   ) {
-    super(message);
+    super(message, { cause });
   }
 }
 function checked<T>(result: {
@@ -28,6 +35,7 @@ function checked<T>(result: {
     throw new ServiceError(
       "The database operation failed. Check that migrations are applied and retry.",
       400,
+      result.error,
     );
   }
   return result.data;
@@ -48,7 +56,41 @@ export class WorkspaceService {
         .maybeSingle(),
     );
     if (!data) throw new ServiceError("Workspace not found.", 404);
-    return data;
+    try {
+      return { ...data, interface: upgradeInterface(data.interface) };
+    } catch (error) {
+      return {
+        ...data,
+        interface: emptyInterface(),
+        legacySource: data.interface,
+        interfaceError: `Saved interface could not be loaded: ${(error as Error).message}. The original definition is preserved.`,
+      };
+    }
+  }
+  catalog() {
+    return catalogDocument();
+  }
+  async inspect(workspaceId: string) {
+    const workspace = await this.workspace(workspaceId);
+    if (workspace.interfaceError)
+      throw new ServiceError(workspace.interfaceError);
+    return inspectInterface(workspace.interface);
+  }
+  async applyInterfaceMessages(
+    workspaceId: string,
+    messages: unknown,
+    revision: unknown,
+  ) {
+    const workspace = await this.workspace(workspaceId);
+    if (workspace.interfaceError)
+      throw new ServiceError(workspace.interfaceError);
+    if (!Array.isArray(messages))
+      throw new ServiceError("Expected an A2UI message array.");
+    return this.saveInterface(
+      workspaceId,
+      { messages: [...workspace.interface.messages, ...messages] },
+      revision,
+    );
   }
   async list() {
     return checked(
@@ -60,25 +102,28 @@ export class WorkspaceService {
     );
   }
   async create(value: unknown) {
-    return checked(
+    const workspace = checked(
       await this.db
         .from("workspaces")
         .insert({ user_id: this.userId, name: name.parse(value) })
-        .select("*")
+        .select("id")
         .single(),
     );
+    if (!workspace) throw new ServiceError("Workspace creation failed.", 500);
+    return this.workspace(workspace.id);
   }
   async rename(workspaceId: string, value: unknown) {
     await this.workspace(workspaceId);
-    return checked(
+    checked(
       await this.db
         .from("workspaces")
         .update({ name: name.parse(value) })
         .eq("id", workspaceId)
         .eq("user_id", this.userId)
-        .select("*")
+        .select("id")
         .single(),
     );
+    return this.workspace(workspaceId);
   }
   async remove(workspaceId: string, confirmation: unknown) {
     await this.workspace(workspaceId);
@@ -262,8 +307,14 @@ export class WorkspaceService {
   }
   async saveInterface(workspaceId: string, input: unknown, revision: unknown) {
     await this.workspace(workspaceId);
-    const definition = interfaceSchema.parse(input);
-    validateBindings(definition, await this.collections(workspaceId));
+    const collections = await this.collections(workspaceId);
+    let definition;
+    try {
+      definition = upgradeInterface(input);
+      validateBindings(definition, collections);
+    } catch (error) {
+      throw new ServiceError((error as Error).message);
+    }
     const expected = z.number().int().positive().parse(revision);
     const result = checked(
       await this.db

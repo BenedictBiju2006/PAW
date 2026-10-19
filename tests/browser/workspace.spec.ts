@@ -8,14 +8,15 @@ test("sign up, manually configure a workspace, persist across sessions, and isol
   const email = `owner${suffix}@example.com`;
   const password = "PAW-local-test-password-123!";
   await page.goto("/");
-  await page
-    .getByRole("button", { name: "Create an account", exact: true })
-    .click();
+  await page.screenshot({ path: "/tmp/paw-auth-desktop.png", fullPage: true });
+  await page.getByRole("button", { name: "Sign up", exact: true }).click();
   await page.getByLabel("Email", { exact: true }).fill(email);
   await page.getByLabel("Password", { exact: true }).fill(password);
-  await page.getByRole("button", { name: "Create account ↗" }).click();
+  await page
+    .getByRole("button", { name: "Create account", exact: true })
+    .click();
   await expect(
-    page.getByRole("heading", { name: "Your workspaces." }),
+    page.getByRole("heading", { name: "Your workspaces" }),
   ).toBeVisible();
   const cookies = await page.context().cookies();
   expect(
@@ -38,7 +39,7 @@ test("sign up, manually configure a workspace, persist across sessions, and isol
   await collectionDialog
     .getByRole("button", { name: "Create collection", exact: true })
     .click();
-  await expect(page.getByText("A fresh start.")).toBeVisible();
+  await expect(page.getByText("No records yet")).toBeVisible();
   await page.getByRole("button", { name: "+ Add record", exact: true }).click();
   await page
     .getByRole("dialog")
@@ -52,25 +53,105 @@ test("sign up, manually configure a workspace, persist across sessions, and isol
     page.getByRole("cell", { name: "The Left Hand of Darkness", exact: true }),
   ).toBeVisible();
   await page.getByRole("tab", { name: "Interface builder" }).click();
-  await page.getByRole("button", { name: "+ Heading", exact: true }).click();
+  await page.getByRole("button", { name: "Add heading", exact: true }).click();
   await page
-    .getByRole("button", { name: "+ Books form & table", exact: true })
+    .getByRole("button", { name: "Add Books form & table", exact: true })
     .click();
-  const definitionInput = page.getByLabel("Interface definition");
+  await page
+    .getByRole("button", { name: "Add Books chart", exact: true })
+    .click();
+  const definitionInput = page.getByLabel("A2UI messages");
   const definition = JSON.parse(await definitionInput.inputValue());
-  definition.nodes.push({
-    id: "chart",
-    type: "chart",
-    collectionId: definition.nodes.find(
-      (n: { type: string }) => n.type === "table",
-    ).collectionId,
-    field: "title",
+  const updates = definition.messages.filter((m: any) => m.updateComponents);
+  const root = updates
+    .at(-1)
+    .updateComponents.components.find((c: any) => c.id === "root");
+  const collectionId = updates
+    .flatMap((m: any) => m.updateComponents.components)
+    .find((c: any) => c.component === "CollectionForm").collectionId;
+  definition.messages.push({
+    version: "v0.9.1",
+    updateComponents: {
+      surfaceId: "workspace",
+      components: [
+        {
+          id: "draft_input",
+          component: "TextField",
+          label: "Draft title",
+          value: { path: "/draft/title" },
+        },
+        {
+          id: "draft_mirror",
+          component: "Text",
+          text: { path: "/draft/title" },
+        },
+        { id: "draft_label", component: "Text", text: "Save draft" },
+        {
+          id: "draft_button",
+          component: "Button",
+          child: "draft_label",
+          action: {
+            event: {
+              name: "paw.createRecord",
+              context: { collectionId, data: { path: "/draft" } },
+            },
+          },
+        },
+        {
+          ...root,
+          children: [
+            ...root.children,
+            "draft_input",
+            "draft_mirror",
+            "draft_button",
+          ],
+        },
+      ],
+    },
   });
+  definition.messages.push({
+    version: "v0.9.1",
+    updateDataModel: {
+      surfaceId: "workspace",
+      path: "/",
+      value: { draft: { title: "Binding works" } },
+    },
+  });
+  await definitionInput.fill(JSON.stringify(definition, null, 2));
+  const preview = page.getByRole("region", { name: "Interface preview" });
+  await expect(
+    preview.getByRole("heading", { name: "My workspace", exact: true }),
+  ).toBeVisible();
+  await expect(
+    preview.getByText("Binding works", { exact: true }),
+  ).toBeVisible();
+  await preview.getByLabel("Draft title", { exact: true }).fill("Preview only");
+  await expect(
+    preview.getByText("Preview only", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    preview.getByRole("button", { name: "Add record", exact: true }),
+  ).toBeDisabled();
+  const invalid = structuredClone(definition);
+  invalid.messages.push({
+    version: "v0.9.1",
+    updateComponents: {
+      surfaceId: "workspace",
+      components: [{ id: "root", component: "Script" }],
+    },
+  });
+  await definitionInput.fill(JSON.stringify(invalid));
+  await expect(
+    page.getByRole("button", { name: "Save interface", exact: true }),
+  ).toBeDisabled();
+  await expect(page.locator("#interface-validation")).toContainText(
+    /unknown|unsupported/i,
+  );
   await definitionInput.fill(JSON.stringify(definition, null, 2));
   await page
     .getByRole("button", { name: "Save interface", exact: true })
     .click();
-  await expect(page.getByRole("status")).toContainText("Interface saved");
+  await expect(page.locator(".notice")).toContainText("Interface saved");
   await page.getByRole("tab", { name: "Workspace" }).click();
   await expect(
     page.getByRole("heading", { name: "My workspace", exact: true }),
@@ -97,6 +178,16 @@ test("sign up, manually configure a workspace, persist across sessions, and isol
   await expect(
     page.getByRole("cell", { name: "The Dispossessed", exact: true }),
   ).toBeVisible();
+  await page
+    .getByLabel("Draft title", { exact: true })
+    .fill("Created through A2UI action");
+  await page.getByRole("button", { name: "Save draft", exact: true }).click();
+  await expect(
+    page.getByRole("cell", {
+      name: "Created through A2UI action",
+      exact: true,
+    }),
+  ).toBeVisible();
   await page.reload();
   await expect(
     page.getByRole("heading", { name: "Reading room", exact: true }),
@@ -104,13 +195,42 @@ test("sign up, manually configure a workspace, persist across sessions, and isol
   await expect(
     page.getByRole("cell", { name: "A Wizard of Earthsea", exact: true }),
   ).toBeVisible();
+  await page.getByRole("tab", { name: "Interface builder" }).click();
+  await page
+    .getByRole("button", { name: "Revision history", exact: true })
+    .click();
+  await page
+    .locator(".history-row")
+    .filter({ has: page.getByText("Revision 1", { exact: true }) })
+    .getByRole("button", { name: "Restore as new revision" })
+    .click();
+  await expect(page.getByText(/Interface revision 3/)).toBeVisible();
+  await page
+    .getByRole("button", { name: "Revision history", exact: true })
+    .click();
+  await page
+    .locator(".history-row")
+    .filter({ has: page.getByText("Revision 2", { exact: true }) })
+    .getByRole("button", { name: "Restore as new revision" })
+    .click();
+  await expect(page.getByText(/Interface revision 4/)).toBeVisible();
+  await page.getByRole("tab", { name: "Workspace", exact: true }).click();
+  await expect(
+    page.getByRole("cell", {
+      name: "Created through A2UI action",
+      exact: true,
+    }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
   await expect(
-    page.getByRole("heading", { name: "Good to see you." }),
+    page.getByRole("heading", { name: "PAW", exact: true }),
   ).toBeVisible();
   await page.getByLabel("Email", { exact: true }).fill(email);
   await page.getByLabel("Password", { exact: true }).fill(password);
-  await page.getByRole("button", { name: "Sign in ↗" }).click();
+  await page
+    .locator("form")
+    .getByRole("button", { name: "Sign in", exact: true })
+    .click();
   await page
     .getByRole("button", { name: /Reading room.*Open your collections/ })
     .click();
@@ -122,16 +242,16 @@ test("sign up, manually configure a workspace, persist across sessions, and isol
   const second = await browser.newContext();
   const visitor = await second.newPage();
   await visitor.goto("/");
-  await visitor
-    .getByRole("button", { name: "Create an account", exact: true })
-    .click();
+  await visitor.getByRole("button", { name: "Sign up", exact: true }).click();
   await visitor
     .getByLabel("Email", { exact: true })
     .fill(`stranger${suffix}@example.com`);
   await visitor.getByLabel("Password", { exact: true }).fill(password);
-  await visitor.getByRole("button", { name: "Create account ↗" }).click();
+  await visitor
+    .getByRole("button", { name: "Create account", exact: true })
+    .click();
   await expect(
-    visitor.getByRole("heading", { name: "Your workspaces." }),
+    visitor.getByRole("heading", { name: "Your workspaces" }),
   ).toBeVisible();
   await expect(visitor.getByText("Reading room", { exact: true })).toHaveCount(
     0,
