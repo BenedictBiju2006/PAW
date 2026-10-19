@@ -6,6 +6,8 @@ import {
   WorkspaceService,
 } from "../../../../../packages/core/services";
 
+import { isAllowedOrigin } from "../../../lib/origin";
+
 export const runtime = "nodejs";
 async function handle(
   req: NextRequest,
@@ -20,8 +22,13 @@ async function handle(
     if (req.method !== "GET") {
       const origin = req.headers.get("origin");
       if (
-        !origin ||
-        origin !== (process.env.PAW_APP_ORIGIN || req.nextUrl.origin)
+        !isAllowedOrigin(
+          origin,
+          req.nextUrl.origin,
+          req.headers.get("host"),
+          process.env.PAW_APP_ORIGIN,
+          process.env.NODE_ENV === "development",
+        )
       )
         throw new ServiceError("Request origin is not allowed.", 403);
       if (!req.headers.get("content-type")?.startsWith("application/json"))
@@ -81,6 +88,8 @@ async function handle(
     const service = new WorkspaceService(db, user.id);
     const [resource, workspaceId, child, childId, recordId] = path;
     const method = req.method;
+    if (resource === "catalog" && method === "GET")
+      return NextResponse.json(service.catalog());
     if (resource !== "workspaces") throw new ServiceError("Not found.", 404);
     let data: unknown;
     if (!workspaceId && method === "GET") data = await service.list();
@@ -94,7 +103,15 @@ async function handle(
         await service.remove(workspaceId, body.confirmed);
         data = { ok: true };
       } else throw new ServiceError("Method not allowed.", 405);
-    } else if (child === "collections" && !childId && method === "GET")
+    } else if (child === "interface" && method === "GET")
+      data = await service.inspect(workspaceId);
+    else if (child === "interface" && method === "PATCH")
+      data = await service.applyInterfaceMessages(
+        workspaceId,
+        body.messages,
+        body.revision,
+      );
+    else if (child === "collections" && !childId && method === "GET")
       data = await service.collections(workspaceId);
     else if (child === "collections" && !childId && method === "POST")
       data = await service.createCollection(workspaceId, body);

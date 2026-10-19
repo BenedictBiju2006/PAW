@@ -4,125 +4,11 @@ import {
   Collection,
   DataRecord,
   Field,
-  Interface,
-  Node,
   RecordData,
 } from "../../../packages/core/schema";
 import { api } from "../lib/api";
 
 type Report = (message: string) => void;
-export function InterfaceRenderer({
-  workspaceId,
-  definition,
-  collections,
-  report,
-}: {
-  workspaceId: string;
-  definition: Interface;
-  collections: Collection[];
-  report: Report;
-}) {
-  const [epoch, setEpoch] = useState(0);
-  const refresh = () => setEpoch((n) => n + 1);
-  function render(node: Node): React.ReactNode {
-    const collection = collections.find((c) => c.id === node.collectionId);
-    switch (node.type) {
-      case "heading":
-        return <h2 key={node.id}>{node.text}</h2>;
-      case "text":
-        return (
-          <p className="interface-text" key={node.id}>
-            {node.text}
-          </p>
-        );
-      case "container":
-        return (
-          <section className="interface-container" key={node.id}>
-            {node.children?.map(render)}
-          </section>
-        );
-      case "tabs":
-        return <InterfaceTabs key={node.id} node={node} render={render} />;
-      case "button":
-        return (
-          <button key={node.id} onClick={refresh}>
-            {node.text || "Refresh data"}
-          </button>
-        );
-      case "form":
-        return (
-          collection && (
-            <section className="surface" key={node.id}>
-              <h3>{node.text || `Add to ${collection.name}`}</h3>
-              <RecordForm
-                collection={collection}
-                save={async (data) => {
-                  await api(
-                    `workspaces/${workspaceId}/collections/${collection.id}`,
-                    "POST",
-                    { data },
-                  );
-                  refresh();
-                }}
-                report={report}
-              />
-            </section>
-          )
-        );
-      default:
-        return (
-          collection && (
-            <section key={node.id} className="surface">
-              <h3>{node.text || collection.name}</h3>
-              <DataView
-                key={epoch}
-                workspaceId={workspaceId}
-                collection={collection}
-                mode={node.type}
-                field={node.field}
-                report={report}
-                onChange={refresh}
-              />
-            </section>
-          )
-        );
-    }
-  }
-  return (
-    <div className="interface-runtime">{definition.nodes.map(render)}</div>
-  );
-}
-function InterfaceTabs({
-  node,
-  render,
-}: {
-  node: Node;
-  render: (node: Node) => React.ReactNode;
-}) {
-  const [index, setIndex] = useState(0);
-  const children = node.children ?? [];
-  return (
-    <div>
-      <div
-        className="tabs"
-        role="tablist"
-        aria-label={node.text || "Workspace tabs"}
-      >
-        {children.map((child, i) => (
-          <button
-            key={child.id}
-            role="tab"
-            aria-selected={i === index}
-            onClick={() => setIndex(i)}
-          >
-            {child.text || child.id}
-          </button>
-        ))}
-      </div>
-      <div role="tabpanel">{children[index] && render(children[index])}</div>
-    </div>
-  );
-}
 export function DataView({
   workspaceId,
   collection,
@@ -130,6 +16,7 @@ export function DataView({
   field,
   report,
   onChange,
+  readOnly = false,
 }: {
   workspaceId: string;
   collection: Collection;
@@ -137,6 +24,7 @@ export function DataView({
   field?: string;
   report: Report;
   onChange?: () => void;
+  readOnly?: boolean;
 }) {
   const [records, setRecords] = useState<DataRecord[]>([]);
   const [total, setTotal] = useState(0);
@@ -260,7 +148,11 @@ export function DataView({
             </form>
           </>
         )}
-        <button className="primary" onClick={() => setEditing("new")}>
+        <button
+          className="primary"
+          disabled={readOnly}
+          onClick={() => setEditing("new")}
+        >
           + Add record
         </button>
       </div>
@@ -302,9 +194,8 @@ export function DataView({
         <p role="status">Loading records…</p>
       ) : !records.length ? (
         <div className="no-records">
-          <span>▤</span>
           <h3>
-            {queryFilter.filter ? "No matching records." : "A fresh start."}
+            {queryFilter.filter ? "No matching records." : "No records yet"}
           </h3>
           <p>
             {queryFilter.filter
@@ -346,9 +237,11 @@ export function DataView({
                 </p>
               ))}
               <div className="row">
-                <button onClick={() => setEditing(r)}>Edit</button>
+                <button disabled={readOnly} onClick={() => setEditing(r)}>
+                  Edit
+                </button>
                 <button
-                  disabled={busy}
+                  disabled={busy || readOnly}
                   className="danger-text"
                   onClick={() => remove(r)}
                 >
@@ -379,9 +272,11 @@ export function DataView({
                   ))}
                   <td>
                     <div className="row">
-                      <button onClick={() => setEditing(r)}>Edit</button>
+                      <button disabled={readOnly} onClick={() => setEditing(r)}>
+                        Edit
+                      </button>
                       <button
-                        disabled={busy}
+                        disabled={busy || readOnly}
                         className="danger-text"
                         onClick={() => remove(r)}
                       >
@@ -433,7 +328,7 @@ export function DataView({
             >
               ×
             </button>
-            <h2>{editing === "new" ? "A new addition." : "Edit record"}</h2>
+            <h2>{editing === "new" ? "Add record" : "Edit record"}</h2>
             <RecordForm
               collection={collection}
               initial={editing === "new" ? undefined : editing.data}
@@ -468,7 +363,7 @@ function display(value: unknown) {
         : "No"
       : String(value);
 }
-function RecordForm({
+export function RecordForm({
   collection,
   initial,
   save,

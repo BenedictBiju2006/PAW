@@ -21,6 +21,9 @@ done
 docker exec -i "$database" psql -U postgres -v ON_ERROR_STOP=1 < tests/bootstrap.sql
 for migration in supabase/migrations/*.sql; do
   docker exec -i "$database" psql -U postgres -v ON_ERROR_STOP=1 < "$migration"
+  if [[ "$migration" == *202610200001_milestone_one.sql ]]; then
+    docker exec -i "$database" psql -U postgres -v ON_ERROR_STOP=1 < tests/legacy-fixture.sql
+  fi
 done
 docker run -d --name "$rest" --network "$network" -p 127.0.0.1::3000 \
   -e "PGRST_DB_URI=postgres://authenticator:local-paw-test-only@$database:5432/postgres" \

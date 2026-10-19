@@ -59,44 +59,76 @@ test("collection schemas reject duplicate keys and invalid enum options", () => 
     ]),
   );
 });
-test("interface accepts only trusted components with unique ids and bounded nesting", () => {
-  assert.deepEqual(interfaceSchema.parse({ version: 1, nodes: [] }), {
-    version: 1,
-    nodes: [],
-  });
-  for (const nodes of [
-    [{ id: "x", type: "script" }],
-    [
-      { id: "x", type: "text", text: "A" },
-      { id: "x", type: "text" },
-    ],
-    [{ id: "x", type: "table" }],
-    [{ id: "x", type: "text", children: [{ id: "y", type: "text" }] }],
-  ])
-    assert.throws(() => interfaceSchema.parse({ version: 1, nodes }));
-  let node: any = { id: "leaf", type: "text" };
-  for (let i = 0; i < 9; i++)
-    node = { id: `c${i}`, type: "container", children: [node] };
-  assert.throws(() => interfaceSchema.parse({ version: 1, nodes: [node] }));
-});
-test("bindings reject foreign collections and unknown chart fields", () => {
-  const collectionId = "11111111-1111-4111-8111-111111111111";
-  const definition = interfaceSchema.parse({
-    version: 1,
-    nodes: [{ id: "table", type: "table", collectionId }],
-  });
-  assert.throws(() => validateBindings(definition, []));
-  const collections = [
-    { id: collectionId, workspace_id: collectionId, name: "Films", fields },
-  ];
-  assert.doesNotThrow(() => validateBindings(definition, collections));
-  assert.throws(() =>
-    validateBindings(
-      {
-        version: 1,
-        nodes: [{ id: "chart", type: "chart", collectionId, field: "missing" }],
-      },
-      collections,
+import { isAllowedOrigin } from "../apps/web/lib/origin";
+test("development accepts the actual host while rejecting other origins and ports", () => {
+  assert.equal(
+    isAllowedOrigin(
+      "http://localhost:3000",
+      "http://0.0.0.0:3000",
+      "localhost:3000",
+      undefined,
+      true,
     ),
+    true,
+  );
+  assert.equal(
+    isAllowedOrigin(
+      "http://127.0.0.1:3000",
+      "http://0.0.0.0:3000",
+      "127.0.0.1:3000",
+      undefined,
+      true,
+    ),
+    true,
+  );
+  for (const origin of [
+    null,
+    "null",
+    "https://attacker.example",
+    "http://localhost:3001",
+    "https://localhost:3000",
+  ]) {
+    assert.equal(
+      isAllowedOrigin(
+        origin,
+        "http://0.0.0.0:3000",
+        "localhost:3000",
+        undefined,
+        true,
+      ),
+      false,
+    );
+  }
+});
+test("production remains strict and explicit configuration takes precedence", () => {
+  assert.equal(
+    isAllowedOrigin(
+      "http://localhost:3000",
+      "http://0.0.0.0:3000",
+      "localhost:3000",
+      undefined,
+      false,
+    ),
+    false,
+  );
+  assert.equal(
+    isAllowedOrigin(
+      "https://paw.example",
+      "http://0.0.0.0:3000",
+      "localhost:3000",
+      "https://paw.example",
+      false,
+    ),
+    true,
+  );
+  assert.equal(
+    isAllowedOrigin(
+      "http://localhost:3000",
+      "http://localhost:3000",
+      "localhost:3000",
+      "https://paw.example",
+      true,
+    ),
+    false,
   );
 });

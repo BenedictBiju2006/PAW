@@ -2,6 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
+import { emptyInterface, inspectInterface } from "../packages/a2ui/document";
+import { CATALOG_ID, PROTOCOL } from "../packages/a2ui/catalog";
 import { WorkspaceService } from "../packages/core/services";
 const enabled = Boolean(process.env.PAW_TEST_REST_URL);
 const a = "11111111-1111-4111-8111-111111111111";
@@ -44,11 +46,63 @@ test(
       stranger = new WorkspaceService(dbB, b);
     let workspace: any, collection: any, record: any;
     await t.test(
+      "forward migration preserves legacy interfaces, records, revisions, and supports conversion/restore",
+      async () => {
+        const legacyId = "33333333-3333-4333-8333-333333333333";
+        const raw = (
+          await dbA.from("workspaces").select("*").eq("id", legacyId).single()
+        ).data;
+        assert.equal(raw.interface.version, 1);
+        assert.equal(raw.revision, 2);
+        const migrated = await owner.workspace(legacyId);
+        assert.ok(migrated.interface.messages);
+        assert.ok(
+          inspectInterface(migrated.interface)[0].components.some(
+            (c) => c.text === "Keep this heading",
+          ),
+        );
+        await owner.rename(legacyId, "Renamed legacy");
+        const saved = await owner.saveInterface(
+          legacyId,
+          migrated.interface,
+          2,
+        );
+        assert.equal(saved.revision, 3);
+        assert.equal(
+          (
+            await owner.records(
+              legacyId,
+              "44444444-4444-4444-8444-444444444444",
+            )
+          ).total,
+          1,
+        );
+        const history = await owner.revisions(legacyId);
+        assert.equal(
+          history.find((r) => r.revision === 2).definition.version,
+          1,
+        );
+        await owner.saveInterface(legacyId, emptyInterface(), 3);
+        const restored = await owner.saveInterface(
+          legacyId,
+          history.find((r) => r.revision === 2).definition,
+          4,
+        );
+        assert.equal(restored.revision, 5);
+        assert.ok(
+          inspectInterface(restored.interface)[0].components.some(
+            (c) => c.component === "CollectionForm",
+          ),
+        );
+        await owner.remove(legacyId, true);
+      },
+    );
+    await t.test(
       "creates an empty workspace and an initial immutable revision",
       async () => {
         workspace = await owner.create("Reading");
         assert.equal(workspace.revision, 1);
-        assert.deepEqual(workspace.interface, { version: 1, nodes: [] });
+        assert.deepEqual(workspace.interface, emptyInterface());
         assert.equal((await owner.revisions(workspace.id)).length, 1);
       },
     );
@@ -251,7 +305,96 @@ test(
           3,
         );
         assert.equal(restored.revision, 4);
-        assert.equal(restored.interface.nodes[0].id, "table");
+        assert.ok(
+          inspectInterface(restored.interface)[0].components.some(
+            (c) => c.id === "table",
+          ),
+        );
+      },
+    );
+    await t.test(
+      "native A2UI updates, catalog inspection, and direct invalid writes stay scoped and atomic",
+      async () => {
+        const shared = await owner.create("Shared child layout");
+        const sharedDefinition = {
+          messages: [
+            emptyInterface().messages[0],
+            {
+              version: PROTOCOL,
+              updateComponents: {
+                surfaceId: "workspace",
+                components: [
+                  { id: "root", component: "Row", children: ["left", "right"] },
+                  { id: "left", component: "Column", children: ["text"] },
+                  { id: "right", component: "Column", children: ["text"] },
+                  { id: "text", component: "Text", text: "Shared content" },
+                ],
+              },
+            },
+          ],
+        };
+        assert.equal(
+          (await owner.saveInterface(shared.id, sharedDefinition, 1)).revision,
+          2,
+        );
+        await owner.remove(shared.id, true);
+        const native = await owner.applyInterfaceMessages(
+          workspace.id,
+          [
+            {
+              version: PROTOCOL,
+              updateDataModel: {
+                surfaceId: "workspace",
+                path: "/title",
+                value: "Incremental title",
+              },
+            },
+          ],
+          4,
+        );
+        assert.equal(native.revision, 5);
+        assert.ok(
+          (await owner.inspect(workspace.id))[0].components.some(
+            (c) => c.component === "DataTable",
+          ),
+        );
+        assert.equal((owner.catalog() as any).catalogId, CATALOG_ID);
+        await assert.rejects(() =>
+          stranger.applyInterfaceMessages(workspace.id, [], 5),
+        );
+        for (const components of [
+          [{ id: "root", component: "Script" }],
+          [{ id: "root", component: "Column", children: ["missing"] }],
+          [{ id: "root", component: "Text", text: 123 }],
+          [{ id: "root", component: "Column", children: ["root"] }],
+          [{ id: "root", component: "Text", text: "OK", onClick: "evil" }],
+        ]) {
+          const definition = {
+            messages: [
+              emptyInterface().messages[0],
+              {
+                version: PROTOCOL,
+                updateComponents: { surfaceId: "workspace", components },
+              },
+            ],
+          };
+          assert.ok(
+            (
+              await dbA
+                .from("workspaces")
+                .update({ interface: definition })
+                .eq("id", workspace.id)
+            ).error,
+          );
+          await assert.rejects(() =>
+            owner.saveInterface(workspace.id, definition, 5),
+          );
+        }
+        assert.equal((await owner.workspace(workspace.id)).revision, 5);
+        assert.equal(
+          (await owner.records(workspace.id, collection.id)).total,
+          1,
+        );
       },
     );
     await t.test(
