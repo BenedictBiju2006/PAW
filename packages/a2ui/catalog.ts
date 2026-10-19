@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { spec } from "@a2ui/web_core/catalog";
 import { Catalog, CommonSchemas } from "@a2ui/web_core/v0_9";
 import {
   TextApi,
@@ -22,49 +21,42 @@ const collectionId = z
   .describe(
     "Persistent collection in the current workspace. Cannot be a transient binding.",
   );
+// Component APIs contain the property schema only. The official processor
+// validates the component envelope and the renderer supplies the generic binder.
 export const CollectionFormApi = {
   name: "CollectionForm",
-  schema: spec(
-    z
-      .object({ collectionId, title: CommonSchemas.DynamicString.optional() })
-      .strict()
-      .describe(
-        "Typed collection form. Dispatches paw.createRecord with validated field data; persistent records are never embedded in the A2UI model.",
-      ),
-    { mixins: ["ComponentCommon"] },
-  ),
+  schema: z
+    .object({ collectionId, title: CommonSchemas.DynamicString.optional() })
+    .strict()
+    .describe(
+      "Typed collection form. Dispatches paw.createRecord with validated field data; persistent records are never embedded in the A2UI model.",
+    ),
 };
 export const DataTableApi = {
   name: "DataTable",
-  schema: spec(
-    z
-      .object({
-        collectionId,
-        title: CommonSchemas.DynamicString.optional(),
-        presentation: z.enum(["table", "list"]).optional(),
-      })
-      .strict()
-      .describe(
-        "Authorized persistent records with edit/delete actions, exact filtering, typed sorting, and pagination. Mutations refresh other collection views.",
-      ),
-    { mixins: ["ComponentCommon"] },
-  ),
+  schema: z
+    .object({
+      collectionId,
+      title: CommonSchemas.DynamicString.optional(),
+      presentation: z.enum(["table", "list"]).optional(),
+    })
+    .strict()
+    .describe(
+      "Authorized persistent records with edit/delete actions, exact filtering, typed sorting, and pagination. Mutations refresh other collection views.",
+    ),
 };
 export const CollectionChartApi = {
   name: "CollectionChart",
-  schema: spec(
-    z
-      .object({
-        collectionId,
-        field: z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,63}$/),
-        title: CommonSchemas.DynamicString.optional(),
-      })
-      .strict()
-      .describe(
-        "Full-collection aggregation for the specified field, displaying at most 100 distinct value counts.",
-      ),
-    { mixins: ["ComponentCommon"] },
-  ),
+  schema: z
+    .object({
+      collectionId,
+      field: z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,63}$/),
+      title: CommonSchemas.DynamicString.optional(),
+    })
+    .strict()
+    .describe(
+      "Full-collection aggregation for the specified field, displaying at most 100 distinct value counts.",
+    ),
 };
 export const componentApis = [
   TextApi,
