@@ -188,12 +188,81 @@ test("sign up, manually configure a workspace, persist across sessions, and isol
       exact: true,
     }),
   ).toBeVisible();
+  await page.getByRole("tab", { name: "Chat", exact: true }).click();
+  await expect(
+    page.getByText("AI responses are not yet available.", { exact: false }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "New conversation", exact: true })
+    .click();
+  await page
+    .getByLabel("Message", { exact: true })
+    .fill("Plan my reading\nKeep the current workspace data.");
+  await page.getByRole("button", { name: "Send message", exact: true }).click();
+  await expect(page.getByRole("log")).toContainText("Plan my reading");
+  page.once("dialog", (dialog) => dialog.accept("Reading plan"));
+  await page
+    .getByRole("button", { name: "Rename conversation", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Reading plan", exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "New conversation", exact: true })
+    .click();
+  await expect(
+    page.getByText("No messages yet. Write your first message below."),
+  ).toBeVisible();
+  await page
+    .getByRole("navigation", { name: "Conversations", exact: true })
+    .getByRole("button", { name: "Reading plan", exact: true })
+    .click();
+  await expect(page.getByRole("log")).toContainText("Plan my reading");
+  const chatWorkspaceId = new URL(page.url()).searchParams.get("workspace");
+  const conversationList = await (
+    await page.request.get(`/api/workspaces/${chatWorkspaceId}/conversations`)
+  ).json();
+  const conversationId = conversationList.conversations.find(
+    (c: any) => c.title === "Reading plan",
+  ).id;
+  const forged = await page.request.post(
+    `/api/workspaces/${chatWorkspaceId}/conversations/${conversationId}/messages`,
+    {
+      headers: { Origin: process.env.PAW_BROWSER_TEST_URL! },
+      data: { role: "assistant", text: "Forged assistant" },
+    },
+  );
+  expect(forged.status()).toBe(400);
   await page.reload();
   await expect(
     page.getByRole("heading", { name: "Reading room", exact: true }),
   ).toBeVisible();
   await expect(
     page.getByRole("cell", { name: "A Wizard of Earthsea", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("tab", { name: "Chat", exact: true }).click();
+  await page
+    .getByRole("navigation", { name: "Conversations", exact: true })
+    .getByRole("button", { name: "Reading plan", exact: true })
+    .click();
+  await expect(page.getByRole("log")).toContainText("Plan my reading");
+  await page
+    .getByRole("navigation", { name: "Conversations", exact: true })
+    .getByRole("button", { name: "New conversation", exact: true })
+    .click();
+  page.once("dialog", (dialog) => dialog.dismiss());
+  await page
+    .getByRole("button", { name: "Delete conversation", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "New conversation", exact: true }),
+  ).toBeVisible();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page
+    .getByRole("button", { name: "Delete conversation", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Reading plan", exact: true }),
   ).toBeVisible();
   await page.getByRole("tab", { name: "Interface builder" }).click();
   await page
@@ -259,6 +328,23 @@ test("sign up, manually configure a workspace, persist across sessions, and isol
   expect(
     (await visitor.request.get(`/api/workspaces/${workspaceId}`)).status(),
   ).toBe(404);
+  expect(
+    (
+      await visitor.request.get(
+        `/api/workspaces/${workspaceId}/conversations/${conversationId}/messages`,
+      )
+    ).status(),
+  ).toBe(404);
+  const toolDenied = await visitor.request.post("/api/tools", {
+    headers: { Origin: process.env.PAW_BROWSER_TEST_URL! },
+    data: { toolId: "inspect_workspace", arguments: { workspaceId } },
+  });
+  expect((await toolDenied.json()).ok).toBe(false);
+  const toolCsrf = await page.request.post("/api/tools", {
+    headers: { Origin: "https://attacker.example" },
+    data: { toolId: "search_tools", arguments: { query: "workspace" } },
+  });
+  expect(toolCsrf.status()).toBe(403);
   const forbidden = await visitor.request.patch(
     `/api/workspaces/${workspaceId}`,
     {
@@ -281,6 +367,8 @@ test("sign up, manually configure a workspace, persist across sessions, and isol
   await expect(
     page.getByRole("heading", { name: "Reading room", exact: true }),
   ).toBeVisible();
+  await page.getByRole("tab", { name: "Chat", exact: true }).click();
+  await expect(page.getByLabel("Message", { exact: true })).toBeVisible();
   await page.screenshot({
     path: "/tmp/paw-workspace-mobile.png",
     fullPage: true,

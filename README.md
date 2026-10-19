@@ -1,6 +1,6 @@
 # PAW
 
-Persistent Agentic Workspaces. Milestone 1.5 adds **A2UI v0.9.1** to the existing Next.js/Supabase runtime and replaces the decorative frontend with Ranked's restrained black-and-white design language. Authentication, private workspaces, typed collections, record operations, and revision history remain supported. LLMs, conversations, MCP, and agent tool discovery are later milestones.
+Persistent Agentic Workspaces. Milestone 2 adds discoverable tools, an official MCP SDK adapter, and persistent workspace conversations alongside the A2UI v0.9.1 runtime and existing manual tools. LLM inference belongs to Milestone 3.
 
 ## Run locally
 
@@ -21,13 +21,14 @@ For production, set connection variables, run `npm run build`, then `npm start`.
 
 ## Apply database migrations
 
-**If Milestone 1 is already installed**, apply only the new forward migration:
+Apply only the migrations your database has not received, in filename order:
 
-[`supabase/migrations/202610200002_a2ui.sql`](supabase/migrations/202610200002_a2ui.sql)
+- Milestone 1 installation: apply [`202610200002_a2ui.sql`](supabase/migrations/202610200002_a2ui.sql), then [`202610200003_conversations.sql`](supabase/migrations/202610200003_conversations.sql).
+- Milestone 1.5 installation (A2UI already applied): apply only [`202610200003_conversations.sql`](supabase/migrations/202610200003_conversations.sql).
 
-In the Supabase dashboard, open **SQL Editor**, paste that entire file into a new query, and run it once. Apply it before using this app version. The original `202610200001_milestone_one.sql` is unchanged and must not be rerun on an existing installation.
+In the Supabase dashboard, open **SQL Editor**, paste each pending file into a separate new query, and run it once. Apply pending migrations before using this app version. Never rerun an already-applied migration; the original milestone migrations remain unchanged.
 
-For a fresh project, apply both migration files in filename order. Alternatively, use the Supabase CLI's normal migration flow:
+For a fresh project, apply all migration files in filename order (including the Milestone 2 migration described below). Alternatively, use the Supabase CLI's normal migration flow:
 
 ```sh
 supabase init # Only if you have not initialized CLI configuration
@@ -175,7 +176,7 @@ If conversion fails, the app displays an explicit compatibility error and expose
 - `apps/web/app/interface-builder.tsx`: editor and preview using that exact runtime.
 - `apps/web/app/globals.css`: shared typography, spacing, borders, surfaces, radii, and interaction tokens, inspired by the four Ranked screens named in the task. No logo, decorative illustrations, gradients, or dashboard branding.
 
-`WorkspaceService.inspect()`, `catalog()`, `saveInterface()`, and `applyInterfaceMessages()` are reusable by future authorized tools. No LLM or MCP layer is implemented.
+`WorkspaceService.inspect()`, `catalog()`, `saveInterface()`, and `applyInterfaceMessages()` are reusable by future authorized tools. Milestone 2 wraps these methods in the shared tool registry and MCP adapter; no LLM is connected.
 
 | API path (under `/api`)                                         | Methods            | Purpose                                                                  |
 | --------------------------------------------------------------- | ------------------ | ------------------------------------------------------------------------ |
@@ -208,3 +209,70 @@ Integration/browser runners require Docker and create disposable local backends.
 The browser runner adds real local Supabase Auth (GoTrue) with auto-confirmation only in that disposable backend. It verifies sign-up/sign-in, interface authoring and immediate preview, invalid component rejection, two-way A2UI binding, A2UI-driven persistent writes, table/chart refresh, reload persistence, second-account isolation, CSRF checks, and desktop/mobile screens. It requires a production build and temporarily owns port 3100. It uses `CHROMIUM_PATH`, system `/usr/bin/chromium`, or Playwright's managed Chromium (`npx playwright install chromium`). Containers are removed on exit.
 
 Hosted acceptance remains a separate check after applying the forward migration: sign in, create a collection and A2UI form/table, save, create/edit records, reload, sign out/in, and confirm a second account cannot access the workspace. Hosted migration deployment and production email delivery are not established by passing local tests.
+
+## Milestone 2: discoverable tools and conversations
+
+The manual **Workspace**, **Collections & data**, and **Interface builder** views remain available. **Chat** adds multiple persisted conversations per workspace. Create, rename, switch and delete conversations, and compose multiline messages. Messages are genuinely stored; **AI responses are not yet available**. No demo responses or provider calls are generated. The same current workspace data and interface are shared across all conversations.
+
+### Migration
+
+For an existing installation, first apply `202610200002_a2ui.sql` if it has not been applied, then apply **[`supabase/migrations/202610200003_conversations.sql`](supabase/migrations/202610200003_conversations.sql)** once through Supabase SQL Editor or your normal migration deployment. Do not rerun earlier migrations. Fresh projects must apply all migration files in filename order. Repository pushes do not apply SQL automatically unless you have explicitly configured deployment.
+
+`conversations` belongs to a workspace. `messages` uses a composite conversation/workspace foreign key, append-only access, a database sequence for stable message ordering, and provider-neutral structured content. RLS derives ownership from the workspace and applies to direct Supabase access too. Conversation identity cannot be moved between workspaces. Deleting a conversation cascades only its messages; deleting a workspace also removes its conversations. No existing interface revisions or records are rewritten.
+
+### Registry and execution
+
+- `packages/tools/registry.ts`: provider-independent metadata, deterministic keyword search and on-demand JSON Schema descriptions.
+- `definitions.ts`: 22 tools with descriptions, purpose, keywords, input schemas, documented output structures, permissions and side effects. Handlers delegate to `WorkspaceService`; they do not duplicate its database operations.
+- `executor.ts`: strict argument validation, host-granted permissions, optional workspace scope, structured errors and trusted-host confirmation for destructive requests.
+- `resources.ts`: bounded resource metadata and authorized inspection through `paw://` identifiers.
+- `mcp.ts`: official MCP TypeScript SDK adapter, instantiated per authenticated host context. It uses the same registry and executor; it does not establish a public MCP endpoint.
+
+Bootstrap discovery consists of `search_tools`, `describe_tool`, `list_resources`, and `inspect_resource`. Search returns compact summaries rather than schemas. Describe returns the full schema, permissions, behavior, side effects and documented result structure. The executor returns `{ok:true,data}` or `{ok:false,error:{code,message,guidance,issues?}}`. Unknown operations and invalid arguments fail before service invocation. A validation/conflict response can be followed by inspection and a corrected retry.
+
+| Capability  | Tools                                                                                                                   |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Discovery   | `search_tools`, `describe_tool`, `list_resources`, `inspect_resource`                                                   |
+| Workspaces  | `list_workspaces`, `create_workspace`, `inspect_workspace`, `rename_workspace`                                          |
+| Collections | `list_collections`, `inspect_collection`, `create_collection`                                                           |
+| Records     | `query_records`, `create_record`, `update_record`, `delete_record`, `aggregate_records`                                 |
+| A2UI        | `get_catalog`, `inspect_component`, `inspect_interface`, `apply_interface_messages`, `save_interface`, `list_revisions` |
+
+Collection schemas remain immutable. Record edits require `updatedAt`; interface mutations require an expected `revision` and run through the existing official A2UI validator. `delete_record` has no confirmation argument. The default HTTP/MCP host returns `confirmation_required`; the user can delete through the existing manual UI. A future interactive host may inject `authorizeDestructive(toolId, exactValidatedArguments)` only after obtaining independent user approval. Never derive that callback or approval from agent output, tool arguments, or a request Boolean.
+
+Authenticated `POST /api/tools` accepts `{toolId, arguments, workspaceId?}`. It preserves origin/CSRF checks, uses the verified session's user-scoped Supabase client, and grants only the known read/write/delete permissions. An optional workspace scope restricts operations to that authorized workspace; it cannot create a new workspace or escape through a resource URI. The agent cannot supply identity or permissions. Do not send credentials, executable code, SQL or shell commands to tools.
+
+### Resources and MCP
+
+`list_resources` accepts `kind`, optional `workspaceId`/`collectionId`, `offset` and `limit` (1–100), returning `{items,nextOffset}`. Each item has a URI, kind, name, description and MIME type. Actual record values require a separate query or inspection. Supported resource identifiers include:
+
+| Resource           | URI                                                                            |
+| ------------------ | ------------------------------------------------------------------------------ |
+| Workspace          | `paw://workspaces/{workspaceId}`                                               |
+| Collection         | `paw://workspaces/{workspaceId}/collections/{collectionId}`                    |
+| Collection schema  | `paw://workspaces/{workspaceId}/collections/{collectionId}/schema`             |
+| Record             | `paw://workspaces/{workspaceId}/collections/{collectionId}/records/{recordId}` |
+| Current interface  | `paw://workspaces/{workspaceId}/interface`                                     |
+| Component instance | `paw://workspaces/{workspaceId}/components/{surfaceId}/{componentId}`          |
+| Revision           | `paw://workspaces/{workspaceId}/revisions/{revision}`                          |
+| Catalog            | `paw://catalog`                                                                |
+
+Inspection returns current service state, schema information, relationships and operation identifiers. Workspaces do not embed entire record collections. No resource state is reconstructed from chat.
+
+The MCP adapter initially exposes only the four bootstrap tool schemas through `tools/list`. Other definitions are discovered via `describe_tool` and invoked via `tools/call`. `resources/list`, `resources/read`, and resource templates use the same authorized execution boundary. No hosted MCP listener or provider dependency is included. Tests connect the official SDK client and server over `InMemoryTransport`, discover tools, inspect schemas, invoke them and read resources; the direct registry and MCP adapter return the same results.
+
+### Conversation API and Milestone 3 boundary
+
+`ConversationService` implements workspace-scoped create/list/rename/delete, paginated ordered message retrieval, and validated append. JSON content supports text, tool calls (name, invocation ID, arguments, status), and tool results; optional metadata contains provider/model/invocation references. It is independent of provider request formats. The public browser endpoint accepts **only user text**, preventing callers from posing as assistant/tool activity through chat.
+
+| API (under `/api/workspaces/:workspaceId`) | Methods       | Payload/results                                 |
+| ------------------------------------------ | ------------- | ----------------------------------------------- |
+| `/conversations`                           | GET, POST     | GET accepts `offset,limit`; POST `{title}`      |
+| `/conversations/:id`                       | PATCH, DELETE | `{title}` or explicit manual `{confirmed:true}` |
+| `/conversations/:id/messages`              | GET, POST     | GET accepts `offset,limit`; POST `{text}`       |
+
+Lists return `{conversations,nextOffset}` or `{messages,nextOffset}`. Pagination is bounded and uses stable database ordering; it is not a multi-request snapshot during simultaneous writes. The composer loads remaining history before appending. Structured tool blocks are rendered as restrained expandable activity details, ready for future stream events.
+
+Milestone 3 should add the provider-neutral inference/stream event adapter, encrypted per-user provider credentials, cancellation and usage bounds, and a server orchestrator that starts with workspace/conversation identity plus the bootstrap discovery tools. Persist normalized assistant/tool events through `ConversationService`; never treat a stored message as authorization or authoritative workspace state. Add a real user approval flow bound to exact destructive arguments before enabling agent-triggered deletes. Hosted MCP remains optional; both provider paths must keep using this executor. No inference loop, API-key storage or model selection is implemented in Milestone 2.
+
+The existing five verification commands cover unit/adapter parity, deterministic tool exploration and persistence, stale/invalid operations, cross-workspace and direct-database RLS isolation, conversations and browser chat management. All integration and browser fixtures run against disposable local Docker backends, never hosted Supabase.

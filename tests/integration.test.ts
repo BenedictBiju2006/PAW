@@ -489,3 +489,472 @@ test(
     );
   },
 );
+
+test(
+  "Milestone 2: deterministic tool discovery, MCP interoperability, conversations and RLS",
+  { skip: !enabled },
+  async (t) => {
+    const { createToolRegistry } =
+      await import("../packages/tools/definitions");
+    const { ToolExecutor } = await import("../packages/tools/executor");
+    const { ConversationService } =
+      await import("../packages/conversations/services");
+    const { createMcpAdapter } = await import("../packages/tools/mcp");
+    const { Client } =
+      await import("@modelcontextprotocol/sdk/client/index.js");
+    const { InMemoryTransport } =
+      await import("@modelcontextprotocol/sdk/inMemory.js");
+    const dbA = client(a),
+      dbB = client(b),
+      registry = createToolRegistry();
+    const service = new WorkspaceService(dbA, a),
+      other = new WorkspaceService(dbB, b);
+    const context = {
+      service,
+      permissions: new Set(["read", "write", "delete"] as const),
+    };
+    const executor = new ToolExecutor(registry, context),
+      stranger = new ToolExecutor(registry, {
+        service: other,
+        permissions: context.permissions,
+      });
+    async function call(id: string, args: unknown) {
+      const result = await executor.execute(id, args);
+      assert.equal(result.ok, true, JSON.stringify(result));
+      return (result as { ok: true; data: any }).data;
+    }
+    const matches = await call("search_tools", { query: "create workspace" });
+    assert.ok(matches.some((x: any) => x.id === "create_workspace"));
+    assert.equal(matches[0].inputSchema, undefined);
+    const descriptor = await call("describe_tool", {
+      toolId: "create_workspace",
+    });
+    assert.equal(descriptor.inputSchema.properties.name.type, "string");
+    const w = await call("create_workspace", { name: "Discovered workspace" });
+    const workspaceId = w.id;
+    const scoped = new ToolExecutor(registry, { ...context, workspaceId });
+    await t.test(
+      "discover, construct and persist a collection-backed A2UI workspace entirely through tools",
+      async () => {
+        assert.ok(
+          (
+            await call("search_tools", { query: "create collection fields" })
+          ).some((x: any) => x.id === "create_collection"),
+        );
+        const collection = await call("create_collection", {
+          workspaceId,
+          name: "Books",
+          fields: [
+            { key: "title", label: "Title", type: "string", required: true },
+          ],
+        });
+        const collectionId = collection.id;
+        assert.ok(
+          (await call("search_tools", { query: "inspect interface" })).some(
+            (x: any) => x.id === "inspect_interface",
+          ),
+        );
+        const catalog = await call("get_catalog", {});
+        assert.ok(catalog.components.CollectionForm);
+        assert.ok(catalog.components.DataTable);
+        const current = await call("inspect_interface", { workspaceId });
+        const saved = await call("apply_interface_messages", {
+          workspaceId,
+          revision: current.revision,
+          messages: [
+            {
+              version: PROTOCOL,
+              updateComponents: {
+                surfaceId: "workspace",
+                components: [
+                  {
+                    id: "root",
+                    component: "Column",
+                    children: ["form", "table"],
+                  },
+                  { id: "form", component: "CollectionForm", collectionId },
+                  { id: "table", component: "DataTable", collectionId },
+                ],
+              },
+            },
+          ],
+        });
+        assert.equal(saved.revision, 2);
+        const record = await call("create_record", {
+          workspaceId,
+          collectionId,
+          data: { title: "Persistent book" },
+        });
+        const query = await call("query_records", {
+          workspaceId,
+          collectionId,
+        });
+        assert.equal(query.total, 1);
+        assert.equal(query.records[0].id, record.id);
+        const resources = await call("list_resources", {
+          kind: "collections",
+          workspaceId,
+          limit: 1,
+        });
+        assert.equal(resources.items[0].name, "Books");
+        const inspected = await call("inspect_resource", {
+          uri: resources.items[0].uri,
+        });
+        assert.equal(inspected.fields[0].type, "string");
+        const recordResource = await call("inspect_resource", {
+          uri: `paw://workspaces/${workspaceId}/collections/${collectionId}/records/${record.id}`,
+        });
+        assert.equal(recordResource.record.data.title, "Persistent book");
+        assert.equal(
+          (await call("inspect_interface", { workspaceId })).surfaces[0]
+            .components.length,
+          3,
+        );
+        const fresh = new ToolExecutor(registry, {
+          service: new WorkspaceService(client(a), a),
+          permissions: context.permissions,
+        });
+        assert.equal(
+          (await fresh.execute("query_records", { workspaceId, collectionId }))
+            .ok,
+          true,
+        );
+        for (const [tool, args] of [
+          ["inspect_workspace", { workspaceId }],
+          ["query_records", { workspaceId, collectionId }],
+          ["inspect_resource", { uri: resources.items[0].uri }],
+          [
+            "create_record",
+            { workspaceId, collectionId, data: { title: "Intrusion" } },
+          ],
+          [
+            "save_interface",
+            { workspaceId, definition: emptyInterface(), revision: 2 },
+          ],
+        ] as const)
+          assert.equal((await stranger.execute(tool, args)).ok, false);
+        assert.equal(
+          (
+            await executor.execute("save_interface", {
+              workspaceId,
+              definition: emptyInterface(),
+              revision: 1,
+            })
+          ).ok,
+          false,
+        );
+        assert.equal(
+          (
+            await executor.execute("apply_interface_messages", {
+              workspaceId,
+              revision: 2,
+              messages: [
+                {
+                  version: PROTOCOL,
+                  updateComponents: {
+                    surfaceId: "workspace",
+                    components: [{ id: "bad", component: "Script" }],
+                  },
+                },
+              ],
+            })
+          ).ok,
+          false,
+        );
+        assert.equal(
+          (
+            await executor.execute("create_record", {
+              workspaceId,
+              collectionId,
+              data: { wrong: "field" },
+            })
+          ).ok,
+          false,
+        );
+        assert.equal(
+          (
+            await executor.execute("update_record", {
+              workspaceId,
+              collectionId,
+              recordId: record.id,
+              data: { title: "Updated" },
+              updatedAt: "2000-01-01T00:00:00Z",
+            })
+          ).ok,
+          false,
+        );
+        const updated = await call("update_record", {
+          workspaceId,
+          collectionId,
+          recordId: record.id,
+          data: { title: "Updated" },
+          updatedAt: record.updated_at,
+        });
+        assert.equal(updated.data.title, "Updated");
+        assert.ok(
+          await call("aggregate_records", {
+            workspaceId,
+            collectionId,
+            field: "title",
+          }),
+        );
+        const foreign = await stranger.execute("create_workspace", {
+          name: "Other scope",
+        });
+        assert.equal(foreign.ok, true);
+        const foreignId = (foreign as any).data.id;
+        assert.equal(
+          (
+            await scoped.execute("inspect_workspace", {
+              workspaceId: foreignId,
+            })
+          ).ok,
+          false,
+        );
+        assert.equal(
+          (
+            await scoped.execute("inspect_resource", {
+              uri: `paw://workspaces/${foreignId}`,
+            })
+          ).ok,
+          false,
+        );
+        assert.equal(
+          (
+            await scoped.execute("list_resources", {
+              kind: "records",
+              workspaceId: foreignId,
+              collectionId,
+            })
+          ).ok,
+          false,
+        );
+        assert.equal(
+          (await scoped.execute("create_workspace", { name: "Escaped" })).ok,
+          false,
+        );
+        const pending = await executor.execute("delete_record", {
+          workspaceId,
+          collectionId,
+          recordId: record.id,
+        });
+        assert.equal(pending.ok, false);
+        if (!pending.ok)
+          assert.equal(pending.error.code, "confirmation_required");
+        let approval: any;
+        const trusted = new ToolExecutor(registry, {
+          ...context,
+          authorizeDestructive: async (id, args) => {
+            approval = { id, args };
+            return true;
+          },
+        });
+        assert.equal(
+          (
+            await trusted.execute("delete_record", {
+              workspaceId,
+              collectionId,
+              recordId: record.id,
+            })
+          ).ok,
+          true,
+        );
+        assert.equal(approval.args.recordId, record.id);
+        assert.equal(
+          (await call("query_records", { workspaceId, collectionId })).total,
+          0,
+        );
+      },
+    );
+    await t.test(
+      "official MCP client discovers, describes, invokes and reads scoped resources",
+      async () => {
+        const server = createMcpAdapter(registry, { ...context, workspaceId }),
+          mcp = new Client({ name: "deterministic-client", version: "1" });
+        const [transportA, transportB] = InMemoryTransport.createLinkedPair();
+        await server.connect(transportA);
+        await mcp.connect(transportB);
+        try {
+          assert.equal((await mcp.listTools()).tools.length, 4);
+          const found = await mcp.callTool({
+            name: "search_tools",
+            arguments: { query: "query records" },
+          });
+          assert.deepEqual(
+            JSON.parse((found.content as any)[0].text),
+            await scoped.execute("search_tools", { query: "query records" }),
+          );
+          const described = await mcp.callTool({
+            name: "describe_tool",
+            arguments: { toolId: "query_records" },
+          });
+          assert.equal(
+            JSON.parse((described.content as any)[0].text).data.id,
+            "query_records",
+          );
+          const invoked = await mcp.callTool({
+            name: "inspect_interface",
+            arguments: { workspaceId },
+          });
+          assert.equal(JSON.parse((invoked.content as any)[0].text).ok, true);
+          assert.equal((await mcp.listResources()).resources[0].name, "Books");
+          const resource = await mcp.readResource({
+            uri: `paw://workspaces/${workspaceId}/interface`,
+          });
+          assert.equal(
+            JSON.parse((resource.contents[0] as any).text).revision,
+            2,
+          );
+        } finally {
+          await mcp.close();
+          await server.close();
+        }
+      },
+    );
+    await t.test(
+      "conversation persistence, stable pagination, cross-workspace guards and direct RLS",
+      async () => {
+        const conversations = new ConversationService(dbA, service),
+          otherConversations = new ConversationService(dbB, other);
+        const one = await conversations.create(workspaceId, "Planning"),
+          two = await conversations.create(workspaceId, "Review");
+        const first = await conversations.append(workspaceId, one.id, {
+          role: "user",
+          content: [{ type: "text", text: "Build a reading list" }],
+        });
+        await conversations.append(workspaceId, one.id, {
+          role: "assistant",
+          content: [
+            {
+              type: "tool_call",
+              toolId: "query_records",
+              invocationId: "test-only",
+              arguments: {},
+              status: "completed",
+            },
+          ],
+          metadata: { provider: "test", model: "fixture" },
+        });
+        const page = await conversations.messages(workspaceId, one.id, {
+          limit: 1,
+        });
+        assert.equal(page.messages[0].id, first.id);
+        assert.equal(page.nextOffset, 1);
+        assert.equal(
+          (
+            await conversations.messages(workspaceId, one.id, {
+              offset: 1,
+              limit: 1,
+            })
+          ).messages[0].role,
+          "assistant",
+        );
+        assert.equal(
+          (await conversations.messages(workspaceId, two.id)).messages.length,
+          0,
+        );
+        assert.equal(
+          (
+            await new ConversationService(
+              client(a),
+              new WorkspaceService(client(a), a),
+            ).messages(workspaceId, one.id)
+          ).messages.length,
+          2,
+        );
+        assert.equal(
+          (await conversations.list(workspaceId, { limit: 1 })).nextOffset,
+          1,
+        );
+        assert.equal(
+          (await conversations.rename(workspaceId, one.id, "New plan")).title,
+          "New plan",
+        );
+        await assert.rejects(() =>
+          otherConversations.messages(workspaceId, one.id),
+        );
+        await assert.rejects(() =>
+          otherConversations.append(workspaceId, one.id, {
+            role: "user",
+            content: [{ type: "text", text: "Intrusion" }],
+          }),
+        );
+        const another = await call("create_workspace", {
+          name: "Separate workspace",
+        });
+        await assert.rejects(() => conversations.messages(another.id, one.id));
+        assert.deepEqual(
+          (await dbB.from("conversations").select("*").eq("id", one.id)).data,
+          [],
+        );
+        assert.deepEqual(
+          (await dbB.from("messages").select("*").eq("conversation_id", one.id))
+            .data,
+          [],
+        );
+        assert.ok(
+          (
+            await dbB.from("messages").insert({
+              workspace_id: workspaceId,
+              conversation_id: one.id,
+              role: "user",
+              content: [{ type: "text", text: "No" }],
+            })
+          ).error,
+        );
+        assert.ok(
+          (
+            await dbA.from("messages").insert({
+              workspace_id: another.id,
+              conversation_id: one.id,
+              role: "user",
+              content: [{ type: "text", text: "Mismatch" }],
+            })
+          ).error,
+        );
+        assert.ok(
+          (
+            await dbA
+              .from("conversations")
+              .update({ workspace_id: another.id })
+              .eq("id", one.id)
+          ).error,
+        );
+        assert.ok(
+          (
+            await dbA
+              .from("messages")
+              .update({ content: [] })
+              .eq("id", first.id)
+          ).error,
+        );
+        await assert.rejects(() =>
+          conversations.remove(workspaceId, one.id, false),
+        );
+        assert.ok(
+          (
+            await dbA
+              .from("messages")
+              .insert({
+                workspace_id: workspaceId,
+                conversation_id: one.id,
+                role: "user",
+                content: [null],
+              })
+          ).error,
+        );
+        assert.ok((await client().from("messages").select("*")).error);
+        await conversations.remove(workspaceId, one.id, true);
+        assert.deepEqual(
+          (await dbA.from("messages").select("*").eq("conversation_id", one.id))
+            .data,
+          [],
+        );
+        assert.equal(
+          (await conversations.list(workspaceId)).conversations[0].id,
+          two.id,
+        );
+      },
+    );
+  },
+);
