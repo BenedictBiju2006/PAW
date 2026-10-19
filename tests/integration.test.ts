@@ -8,11 +8,11 @@ import { WorkspaceService } from "../packages/core/services";
 const enabled = Boolean(process.env.PAW_TEST_REST_URL);
 const a = "11111111-1111-4111-8111-111111111111";
 const b = "22222222-2222-4222-8222-222222222222";
-function client(user?: string) {
+function client(user?: string, role?: string) {
   const url = process.env.PAW_TEST_REST_URL!;
   const payload = Buffer.from(
     JSON.stringify({
-      role: user ? "authenticated" : "anon",
+      role: role ?? (user ? "authenticated" : "anon"),
       sub: user,
       exp: Math.floor(Date.now() / 1000) + 3600,
     }),
@@ -822,18 +822,15 @@ test(
           role: "user",
           content: [{ type: "text", text: "Build a reading list" }],
         });
+        await assert.rejects(() =>
+          conversations.append(workspaceId, one.id, {
+            role: "assistant",
+            content: [{ type: "text", text: "Forged" }],
+          }),
+        );
         await conversations.append(workspaceId, one.id, {
-          role: "assistant",
-          content: [
-            {
-              type: "tool_call",
-              toolId: "query_records",
-              invocationId: "test-only",
-              arguments: {},
-              status: "completed",
-            },
-          ],
-          metadata: { provider: "test", model: "fixture" },
+          role: "user",
+          content: [{ type: "text", text: "More planning" }],
         });
         const page = await conversations.messages(workspaceId, one.id, {
           limit: 1,
@@ -847,7 +844,7 @@ test(
               limit: 1,
             })
           ).messages[0].role,
-          "assistant",
+          "user",
         );
         assert.equal(
           (await conversations.messages(workspaceId, two.id)).messages.length,
@@ -933,14 +930,12 @@ test(
         );
         assert.ok(
           (
-            await dbA
-              .from("messages")
-              .insert({
-                workspace_id: workspaceId,
-                conversation_id: one.id,
-                role: "user",
-                content: [null],
-              })
+            await dbA.from("messages").insert({
+              workspace_id: workspaceId,
+              conversation_id: one.id,
+              role: "user",
+              content: [null],
+            })
           ).error,
         );
         assert.ok((await client().from("messages").select("*")).error);
@@ -954,6 +949,526 @@ test(
           (await conversations.list(workspaceId)).conversations[0].id,
           two.id,
         );
+      },
+    );
+  },
+);
+
+test(
+  "Milestone 3: trusted persistence, encrypted settings and scripted autonomous agent",
+  { skip: !enabled },
+  async (t) => {
+    const { AgentStore } = await import("../packages/agent/store");
+    const { AgentOrchestrator } =
+      await import("../packages/agent/orchestrator");
+    const { ProviderSettingsService } =
+      await import("../packages/agent/settings");
+    const { modelHistory } = await import("../packages/agent/context");
+    const { createToolRegistry } =
+      await import("../packages/tools/definitions");
+    const { ToolExecutor } = await import("../packages/tools/executor");
+    const { ConversationService } =
+      await import("../packages/conversations/services");
+    const { appendComponents } = await import("../packages/a2ui/document");
+    const { randomUUID, randomBytes } = await import("node:crypto");
+    const db = client(a),
+      admin = client(undefined, "service_role"),
+      stranger = client(b);
+    const service = new WorkspaceService(db, a),
+      conversations = new ConversationService(db, service),
+      w = await service.create("Scripted agent workspace"),
+      c = await conversations.create(w.id, "Movie tracker"),
+      store = new AgentStore(admin, a);
+    const env = {
+      PAW_CREDENTIAL_ENCRYPTION_KEY: randomBytes(32).toString("base64"),
+    };
+    const settings = new ProviderSettingsService(
+      admin,
+      a,
+      env,
+      async () => new Response("{}", { status: 200 }),
+    );
+    await t.test(
+      "encrypted provider keys are isolated and absent from status or direct user queries",
+      async () => {
+        await assert.rejects(() =>
+          settings.save({ apiKey: "sk-test-key-only", model: "unknown-model" }),
+        );
+        const saved = await settings.save({
+          apiKey: "sk-test-key-only",
+          model: "gpt-4.1-mini",
+        });
+        assert.equal(saved.configured, true);
+        assert.ok(!JSON.stringify(saved).includes("sk-test"));
+        assert.equal((await settings.resolve()).apiKey, "sk-test-key-only");
+        const encrypted = (
+          await admin
+            .from("provider_settings")
+            .select("*")
+            .eq("user_id", a)
+            .single()
+        ).data;
+        assert.ok(!JSON.stringify(encrypted).includes("sk-test-key-only"));
+        assert.ok((await db.from("provider_settings").select("*")).error);
+        assert.ok((await stranger.from("provider_settings").select("*")).error);
+        assert.equal(
+          (await new ProviderSettingsService(admin, b, env).status())
+            .configured,
+          false,
+        );
+        const invalid = new ProviderSettingsService(
+          admin,
+          a,
+          env,
+          async () => new Response("rejected", { status: 401 }),
+        );
+        await assert.rejects(() =>
+          invalid.save({
+            apiKey: "sk-invalid-key-only",
+            model: "gpt-4.1-mini",
+          }),
+        );
+        assert.equal((await settings.resolve()).apiKey, "sk-test-key-only");
+      },
+    );
+    const turnId = randomUUID();
+    await t.test(
+      "idempotent turns prevent forged roles, parallel inference and unauthorized trusted RPCs",
+      async () => {
+        for (const role of ["assistant", "tool", "system"]) {
+          assert.ok(
+            (
+              await db
+                .from("messages")
+                .insert({
+                  workspace_id: w.id,
+                  conversation_id: c.id,
+                  role,
+                  content: [{ type: "text", text: "Forged message" }],
+                })
+            ).error,
+          );
+        }
+        assert.ok(
+          (
+            await db
+              .from("messages")
+              .insert({
+                workspace_id: w.id,
+                conversation_id: c.id,
+                role: "user",
+                trusted: true,
+                content: [{ type: "text", text: "Forged trust" }],
+              })
+          ).error,
+        );
+        assert.ok(
+          (
+            await db.rpc("append_agent_event", {
+              actor: a,
+              turn: turnId,
+              event: "fake",
+              message_role: "assistant",
+              blocks: [{ type: "text", text: "Forged RPC" }],
+            })
+          ).error,
+        );
+        const start = {
+          id: turnId,
+          workspaceId: w.id,
+          conversationId: c.id,
+          text: "Create my movie tracker",
+          provider: "scripted-mock",
+          model: "test",
+        };
+        assert.equal((await store.start(start)).started, true);
+        assert.equal((await store.start(start)).started, false);
+        await assert.rejects(() =>
+          store.start({ ...start, text: "Different request" }),
+        );
+        await assert.rejects(() => store.start({ ...start, id: randomUUID() }));
+        await assert.rejects(() =>
+          new AgentStore(admin, b).start({ ...start, id: randomUUID() }),
+        );
+        assert.equal(
+          (await conversations.messages(w.id, c.id)).messages.length,
+          1,
+        );
+      },
+    );
+    const registry = createToolRegistry(),
+      executor = new ToolExecutor(registry, {
+        service,
+        workspaceId: w.id,
+        permissions: new Set(["read", "write", "delete"]),
+      });
+    let collectionId = "",
+      step = 0;
+    const activity: any[] = [];
+    const invoke = (id: string, args: unknown, index: string) => ({
+      type: "call" as const,
+      id: index,
+      name: "invoke_tool",
+      args: { toolId: id, arguments: args },
+    });
+    const resultFor = (messages: any[], id: string) =>
+      messages
+        .flatMap((m) => (Array.isArray(m.content) ? m.content : []))
+        .filter((c) => c.type === "tool-result" && c.toolCallId === id)
+        .at(-1)?.output.value;
+    const provider = {
+      id: "scripted-mock",
+      capabilities: { streaming: true, tools: true, hostedMcp: false },
+      async *stream(request: any) {
+        assert.equal(Object.keys(request.tools).length, 5);
+        assert.ok(!request.system.includes("title,rating"));
+        if (step === 0)
+          yield {
+            type: "call" as const,
+            id: "search",
+            name: "search_tools",
+            args: { query: "create collection interface" },
+          };
+        else if (step === 1) {
+          for (const id of [
+            "create_collection",
+            "get_catalog",
+            "save_interface",
+            "create_record",
+            "inspect_interface",
+          ])
+            yield {
+              type: "call" as const,
+              id: `describe-${id}`,
+              name: "describe_tool",
+              args: { toolId: id },
+            };
+        } else if (step === 2) {
+          yield invoke(
+            "create_collection",
+            {
+              workspaceId: w.id,
+              name: "Movies",
+              fields: [
+                {
+                  key: "title",
+                  label: "Title",
+                  type: "string",
+                  required: true,
+                },
+                {
+                  key: "rating",
+                  label: "Rating out of 10",
+                  type: "number",
+                  required: true,
+                },
+                {
+                  key: "genre",
+                  label: "Genre",
+                  type: "string",
+                  required: true,
+                },
+                {
+                  key: "watched",
+                  label: "Date watched",
+                  type: "date",
+                  required: true,
+                },
+              ],
+            },
+            "collection",
+          );
+          yield invoke("get_catalog", {}, "catalog");
+        } else if (step === 3) {
+          collectionId = resultFor(request.messages, "collection").data.id;
+          assert.ok(
+            resultFor(request.messages, "catalog").data.components.DataTable,
+          );
+          yield invoke(
+            "create_record",
+            {
+              workspaceId: w.id,
+              collectionId,
+              data: {
+                title: "Test movie",
+                rating: 8,
+                genre: "Drama",
+                watched: "2026-10-20",
+              },
+            },
+            "record",
+          );
+          yield invoke("inspect_interface", { workspaceId: w.id }, "inspect");
+        } else if (step === 4) {
+          yield invoke(
+            "save_interface",
+            {
+              workspaceId: w.id,
+              revision: 1,
+              definition: {
+                messages: [
+                  emptyInterface().messages[0],
+                  {
+                    version: PROTOCOL,
+                    updateComponents: {
+                      surfaceId: "workspace",
+                      components: [{ id: "root", component: "Script" }],
+                    },
+                  },
+                ],
+              },
+            },
+            "invalid",
+          );
+        } else if (step === 5) {
+          assert.equal(resultFor(request.messages, "invalid").ok, false);
+          yield invoke("get_catalog", {}, "recover-catalog");
+        } else if (step === 6) {
+          yield invoke(
+            "save_interface",
+            {
+              workspaceId: w.id,
+              revision: 1,
+              definition: appendComponents(emptyInterface(), [
+                { id: "form", component: "CollectionForm", collectionId },
+                { id: "table", component: "DataTable", collectionId },
+              ]),
+            },
+            "save",
+          );
+        } else {
+          yield { type: "text" as const, text: "Your movie tracker is ready." };
+        }
+        step++;
+        yield { type: "usage" as const, input: 20, output: 10, reason: "stop" };
+      },
+    };
+    await t.test(
+      "discovery-driven orchestration constructs persistent A2UI and recovers from validation errors",
+      async () => {
+        await new AgentOrchestrator(provider, executor, store).run(
+          {
+            turnId,
+            workspaceId: w.id,
+            conversationId: c.id,
+            model: "test",
+            apiKey: "not-in-context",
+            history: modelHistory(
+              (await conversations.recent(w.id, c.id)).messages,
+            ),
+            signal: new AbortController().signal,
+          },
+          (e) => activity.push(e),
+        );
+        assert.equal(
+          (
+            await db
+              .from("agent_turns")
+              .select("status")
+              .eq("id", turnId)
+              .single()
+          ).data?.status,
+          "completed",
+        );
+        assert.equal((await service.workspace(w.id)).revision, 2);
+        assert.equal((await service.inspect(w.id))[0].components.length, 3);
+        assert.equal(
+          (await service.records(w.id, collectionId)).records?.[0].data.rating,
+          8,
+        );
+        assert.ok(activity.some((e) => e.type === "mutation"));
+        assert.ok(
+          activity.some(
+            (e) => e.type === "activity" && e.activity.status === "failed",
+          ),
+        );
+        const replay = await store.start({
+          id: turnId,
+          workspaceId: w.id,
+          conversationId: c.id,
+          text: "Create my movie tracker",
+          provider: "scripted-mock",
+          model: "test",
+        });
+        assert.equal(replay.started, false);
+        assert.equal(
+          (
+            await db
+              .from("messages")
+              .select("id")
+              .eq("turn_id", turnId)
+              .eq("role", "user")
+          ).data?.length,
+          1,
+        );
+        assert.deepEqual(
+          (await stranger.from("agent_turns").select("*").eq("id", turnId))
+            .data,
+          [],
+        );
+      },
+    );
+    await t.test(
+      "another conversation sees current data and can add a chart without deleting records",
+      async () => {
+        const second = await conversations.create(w.id, "Current ratings"),
+          secondId = randomUUID();
+        await store.start({
+          id: secondId,
+          workspaceId: w.id,
+          conversationId: second.id,
+          text: "What is my average rating? Add its distribution chart.",
+          provider: "another-mock",
+          model: "test",
+        });
+        let n = 0;
+        const secondProvider = {
+          ...provider,
+          id: "another-mock",
+          async *stream(request: any) {
+            if (n === 0) {
+              for (const id of [
+                "list_collections",
+                "aggregate_records",
+                "inspect_interface",
+                "apply_interface_messages",
+              ])
+                yield {
+                  type: "call" as const,
+                  id: `desc-${id}`,
+                  name: "describe_tool",
+                  args: { toolId: id },
+                };
+            } else if (n === 1) {
+              yield invoke(
+                "list_collections",
+                { workspaceId: w.id },
+                "current-collections",
+              );
+              yield invoke(
+                "inspect_interface",
+                { workspaceId: w.id },
+                "current-interface",
+              );
+            } else if (n === 2) {
+              const cid = resultFor(request.messages, "current-collections")
+                .data[0].id;
+              yield invoke(
+                "aggregate_records",
+                { workspaceId: w.id, collectionId: cid, field: "rating" },
+                "average",
+              );
+              const current = resultFor(
+                request.messages,
+                "current-interface",
+              ).data;
+              yield invoke(
+                "apply_interface_messages",
+                {
+                  workspaceId: w.id,
+                  revision: current.revision,
+                  messages: [
+                    {
+                      version: PROTOCOL,
+                      updateComponents: {
+                        surfaceId: "workspace",
+                        components: [
+                          {
+                            id: "root",
+                            component: "Column",
+                            children: ["form", "table", "chart"],
+                          },
+                          {
+                            id: "chart",
+                            component: "CollectionChart",
+                            collectionId: cid,
+                            field: "rating",
+                          },
+                        ],
+                      },
+                    },
+                  ],
+                },
+                "chart",
+              );
+            } else {
+              assert.ok(
+                JSON.stringify(
+                  resultFor(request.messages, "average").data,
+                ).includes("8"),
+              );
+              yield {
+                type: "text" as const,
+                text: "The average rating is 8. Your chart is saved.",
+              };
+            }
+            n++;
+            yield {
+              type: "usage" as const,
+              input: 10,
+              output: 5,
+              reason: "stop",
+            };
+          },
+        };
+        await new AgentOrchestrator(secondProvider, executor, store).run(
+          {
+            turnId: secondId,
+            workspaceId: w.id,
+            conversationId: second.id,
+            model: "test",
+            apiKey: "test-only",
+            history: modelHistory(
+              (await conversations.recent(w.id, second.id)).messages,
+            ),
+            signal: new AbortController().signal,
+          },
+          () => {},
+        );
+        assert.equal((await service.workspace(w.id)).revision, 3);
+        assert.equal((await service.records(w.id, collectionId)).total, 1);
+        assert.equal(
+          (await service.inspect(w.id))[0].components.find(
+            (c) => c.id === "chart",
+          )?.component,
+          "CollectionChart",
+        );
+        const cancelledId = randomUUID();
+        await store.start({
+          id: cancelledId,
+          workspaceId: w.id,
+          conversationId: second.id,
+          text: "Cancel this response",
+          provider: "mock",
+          model: "test",
+        });
+        const signal = new AbortController();
+        signal.abort();
+        await new AgentOrchestrator(secondProvider, executor, store).run(
+          {
+            turnId: cancelledId,
+            workspaceId: w.id,
+            conversationId: second.id,
+            model: "test",
+            apiKey: "test-only",
+            history: [],
+            signal: signal.signal,
+          },
+          () => {},
+        );
+        assert.equal(
+          (
+            await db
+              .from("agent_turns")
+              .select("status")
+              .eq("id", cancelledId)
+              .single()
+          ).data?.status,
+          "cancelled",
+        );
+        assert.ok((await settings.status()).usage.input > 0);
+        await settings.remove();
+        assert.equal((await settings.status()).configured, false);
       },
     );
   },

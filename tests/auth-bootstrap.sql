@@ -1,9 +1,11 @@
 -- Local browser test backend only. Supabase Auth owns and migrates auth.users.
+create role service_role nologin bypassrls;
 create role anon nologin;
 create role authenticated nologin;
 create role authenticator login password 'local-paw-test-only';
 create role supabase_auth_admin login password 'local-paw-auth-test-only' noinherit createrole;
-grant anon, authenticated to authenticator;
+grant anon, authenticated, service_role to authenticator;
+grant usage on schema public to service_role;
 create schema auth authorization supabase_auth_admin;
 create schema extensions;
 create extension if not exists "uuid-ossp" with schema extensions;

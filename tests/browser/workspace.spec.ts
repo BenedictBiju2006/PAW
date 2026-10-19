@@ -190,7 +190,7 @@ test("sign up, manually configure a workspace, persist across sessions, and isol
   ).toBeVisible();
   await page.getByRole("tab", { name: "Chat", exact: true }).click();
   await expect(
-    page.getByText("AI responses are not yet available.", { exact: false }),
+    page.getByText("Add your OpenAI API key in AI settings", { exact: false }),
   ).toBeVisible();
   await page
     .getByRole("button", { name: "New conversation", exact: true })
@@ -198,8 +198,9 @@ test("sign up, manually configure a workspace, persist across sessions, and isol
   await page
     .getByLabel("Message", { exact: true })
     .fill("Plan my reading\nKeep the current workspace data.");
-  await page.getByRole("button", { name: "Send message", exact: true }).click();
+  await page.getByRole("button", { name: "Save message", exact: true }).click();
   await expect(page.getByRole("log")).toContainText("Plan my reading");
+  await page.getByText("Conversation actions", { exact: true }).click();
   page.once("dialog", (dialog) => dialog.accept("Reading plan"));
   await page
     .getByRole("button", { name: "Rename conversation", exact: true })
@@ -211,7 +212,10 @@ test("sign up, manually configure a workspace, persist across sessions, and isol
     .getByRole("button", { name: "New conversation", exact: true })
     .click();
   await expect(
-    page.getByText("No messages yet. Write your first message below."),
+    page.getByRole("heading", {
+      name: "What would you like to create?",
+      exact: true,
+    }),
   ).toBeVisible();
   await page
     .getByRole("navigation", { name: "Conversations", exact: true })
@@ -225,6 +229,21 @@ test("sign up, manually configure a workspace, persist across sessions, and isol
   const conversationId = conversationList.conversations.find(
     (c: any) => c.title === "Reading plan",
   ).id;
+  const aiStatus = await (await page.request.get("/api/ai-settings")).json();
+  expect(aiStatus.configured).toBe(false);
+  expect(aiStatus.encryptionReady).toBe(true);
+  expect(aiStatus.credential).toBeUndefined();
+  const notConfigured = await page.request.post("/api/agent", {
+    headers: { Origin: process.env.PAW_BROWSER_TEST_URL! },
+    data: {
+      turnId: crypto.randomUUID(),
+      workspaceId: chatWorkspaceId,
+      conversationId,
+      text: "Do not invoke an unconfigured provider",
+    },
+  });
+  expect(notConfigured.status()).toBe(400);
+  expect((await notConfigured.json()).error).toContain("API key");
   const forged = await page.request.post(
     `/api/workspaces/${chatWorkspaceId}/conversations/${conversationId}/messages`,
     {
@@ -250,6 +269,7 @@ test("sign up, manually configure a workspace, persist across sessions, and isol
     .getByRole("navigation", { name: "Conversations", exact: true })
     .getByRole("button", { name: "New conversation", exact: true })
     .click();
+  await page.getByText("Conversation actions", { exact: true }).click();
   page.once("dialog", (dialog) => dialog.dismiss());
   await page
     .getByRole("button", { name: "Delete conversation", exact: true })

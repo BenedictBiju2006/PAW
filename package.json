@@ -11,11 +11,12 @@
     "build": "npm run build --workspace apps/web",
     "start": "npm run start --workspace apps/web",
     "typecheck": "tsc --noEmit -p apps/web/tsconfig.json",
-    "test": "tsx --test tests/core.test.ts tests/a2ui.test.ts tests/tools.test.ts",
+    "test": "tsx --test tests/core.test.ts tests/a2ui.test.ts tests/tools.test.ts tests/agent.test.ts",
     "test:integration": "bash scripts/test-integration.sh",
     "test:browser": "bash scripts/test-browser.sh",
     "format": "prettier --write apps packages tests playwright.config.ts package.json README.md",
-    "catalog:generate": "tsx scripts/generate-catalog.ts"
+    "catalog:generate": "tsx scripts/generate-catalog.ts",
+    "test:live": "tsx --test tests/openai-live.test.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.64.1",
@@ -28,9 +29,13 @@
     "typescript": "^5.9.0"
   },
   "dependencies": {
+    "@ai-sdk/openai": "4.0.97",
+    "@ai-sdk/react": "4.0.149",
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "@supabase/supabase-js": "^2.118.0",
-    "zod": "^4.0.0",
-    "@modelcontextprotocol/sdk": "^1.32.1"
+    "ai": "7.0.145",
+    "react-markdown": "10.1.0",
+    "zod": "^4.0.0"
   },
   "engines": {
     "node": ">=22"

@@ -54,5 +54,7 @@ export type Message = z.infer<typeof messageInput> & {
   conversation_id: string;
   workspace_id: string;
   sequence: number;
+  trusted?: boolean;
+  turn_id?: string | null;
   created_at: string;
 };

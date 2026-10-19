@@ -53,6 +53,10 @@ gateway_pid=$!
 for ((i=0;i<20;i++)); do if [[ -s "$PAW_GATEWAY_PORT_FILE" ]]; then break; fi; sleep 1; done
 export NEXT_PUBLIC_SUPABASE_URL="http://127.0.0.1:$(cat "$PAW_GATEWAY_PORT_FILE")"
 export NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY='local-browser-test-only'
+export PAW_CREDENTIAL_ENCRYPTION_KEY="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("base64"))')"
+export PAW_TEST_JWT_SECRET="$jwt_secret"
+unset SUPABASE_SECRET_KEY
+export SUPABASE_SERVICE_ROLE_KEY="$(node tests/service-token.mjs)"
 # Override .env.local for this process only. Next serves the already-built app.
 node node_modules/next/dist/bin/next start apps/web -H localhost -p 3100 >"$test_tmp/app.log" 2>&1 &
 app_pid=$!

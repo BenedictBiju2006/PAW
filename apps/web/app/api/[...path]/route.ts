@@ -11,9 +11,16 @@ import { createToolRegistry } from "../../../../../packages/tools/definitions";
 import { ToolExecutor } from "../../../../../packages/tools/executor";
 import { z } from "zod";
 
+import {
+  agentResponse,
+  cancelAgent,
+  privilegedPersistence,
+} from "../../../lib/agent";
+import { ProviderSettingsService } from "../../../../../packages/agent/settings";
 import { isAllowedOrigin } from "../../../lib/origin";
 
 export const runtime = "nodejs";
+export const maxDuration = 300;
 async function handle(
   req: NextRequest,
   context: { params: Promise<{ path: string[] }> },
@@ -91,6 +98,31 @@ async function handle(
     } = await db.auth.getUser();
     if (error || !user) throw new ServiceError("Please sign in.", 401);
     const service = new WorkspaceService(db, user.id);
+    if (path[0] === "ai-settings" && path.length === 1) {
+      const settings = new ProviderSettingsService(
+        privilegedPersistence(),
+        user.id,
+      );
+      const result =
+        req.method === "GET"
+          ? await settings.status()
+          : req.method === "PUT"
+            ? await settings.save(body)
+            : req.method === "DELETE"
+              ? await settings.remove()
+              : null;
+      if (!result) throw new ServiceError("Method not allowed.", 405);
+      return NextResponse.json(result, {
+        headers: { "Cache-Control": "no-store" },
+      });
+    }
+    if (path[0] === "agent" && req.method === "POST") {
+      if (path.length === 1)
+        return await agentResponse(user.id, body, db, req.signal);
+      if (path.length === 2 && path[1] === "cancel")
+        return NextResponse.json(await cancelAgent(user.id, body, db));
+    }
+
     // Tool execution is authenticated, bounded and CSRF-protected by the same
     // route boundary as manual operations. Permissions are selected by the host.
     if (path[0] === "tools" && path.length === 1 && req.method === "POST") {
@@ -119,11 +151,30 @@ async function handle(
     if (resource !== "workspaces") throw new ServiceError("Not found.", 404);
     let data: unknown;
     if (child === "conversations") {
-      if (path.length > 5 || (recordId && recordId !== "messages"))
+      if (
+        path.length > 5 ||
+        (recordId && !["messages", "turns"].includes(recordId))
+      )
         throw new ServiceError("Not found.", 404);
       const conversations = new ConversationService(db, service);
       const paging = Object.fromEntries(req.nextUrl.searchParams);
-      if (!childId && !recordId && method === "GET")
+      if (childId && recordId === "turns" && method === "GET") {
+        await conversations.conversation(workspaceId, childId);
+        const result = await db
+          .from("agent_turns")
+          .select(
+            "id,status,notice,input_tokens,output_tokens,model,created_at",
+          )
+          .eq("workspace_id", workspaceId)
+          .eq("conversation_id", childId)
+          .order("created_at", { ascending: false })
+          .limit(20);
+        if (result.error)
+          throw new ServiceError(
+            "Could not load response status. Check pending migrations.",
+          );
+        data = result.data;
+      } else if (!childId && !recordId && method === "GET")
         data = await conversations.list(workspaceId, paging);
       else if (!childId && !recordId && method === "POST")
         data = await conversations.create(workspaceId, body.title);
@@ -132,9 +183,19 @@ async function handle(
       else if (childId && !recordId && method === "DELETE") {
         await conversations.remove(workspaceId, childId, body.confirmed);
         data = { ok: true };
-      } else if (childId && recordId === "messages" && method === "GET")
-        data = await conversations.messages(workspaceId, childId, paging);
-      else if (childId && recordId === "messages" && method === "POST") {
+      } else if (childId && recordId === "messages" && method === "GET") {
+        if (req.nextUrl.searchParams.has("recent")) {
+          const args = z
+            .object({
+              recent: z.literal("true"),
+              before: z.coerce.number().int().positive().optional(),
+            })
+            .strict()
+            .parse(paging);
+          data = await conversations.recent(workspaceId, childId, args.before);
+        } else
+          data = await conversations.messages(workspaceId, childId, paging);
+      } else if (childId && recordId === "messages" && method === "POST") {
         // Public chat cannot impersonate assistant/tool roles or forge activity.
         const { text } = z
           .object({ text: z.string().trim().min(1).max(50000) })
