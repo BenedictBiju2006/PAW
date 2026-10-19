@@ -1,0 +1,34 @@
+{
+  "name": "paw",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace apps/web",
+    "build": "npm run build --workspace apps/web",
+    "start": "npm run start --workspace apps/web",
+    "typecheck": "tsc --noEmit -p apps/web/tsconfig.json",
+    "test": "tsx --test tests/core.test.ts",
+    "test:integration": "bash scripts/test-integration.sh",
+    "test:browser": "bash scripts/test-browser.sh",
+    "format": "prettier --write apps packages tests playwright.config.ts package.json README.md"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "prettier": "^3.9.10",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.100.0",
+    "zod": "^4.0.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
