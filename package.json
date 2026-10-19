@@ -11,7 +11,7 @@
     "build": "npm run build --workspace apps/web",
     "start": "npm run start --workspace apps/web",
     "typecheck": "tsc --noEmit -p apps/web/tsconfig.json",
-    "test": "tsx --test tests/core.test.ts tests/a2ui.test.ts",
+    "test": "tsx --test tests/core.test.ts tests/a2ui.test.ts tests/tools.test.ts",
     "test:integration": "bash scripts/test-integration.sh",
     "test:browser": "bash scripts/test-browser.sh",
     "format": "prettier --write apps packages tests playwright.config.ts package.json README.md",
@@ -29,7 +29,8 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",
-    "zod": "^4.0.0"
+    "zod": "^4.0.0",
+    "@modelcontextprotocol/sdk": "^1.32.1"
   },
   "engines": {
     "node": ">=22"

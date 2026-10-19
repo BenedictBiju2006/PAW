@@ -25,7 +25,7 @@ export class ServiceError extends Error {
     super(message, { cause });
   }
 }
-function checked<T>(result: {
+export function checked<T>(result: {
   data: T;
   error: { message: string; code?: string } | null;
 }): T {
@@ -92,13 +92,17 @@ export class WorkspaceService {
       revision,
     );
   }
-  async list() {
+  async list(offset = 0, limit = 1000) {
+    z.number().int().min(0).max(100000).parse(offset);
+    z.number().int().min(1).max(1000).parse(limit);
     return checked(
       await this.db
         .from("workspaces")
         .select("id,name,revision,updated_at")
         .eq("user_id", this.userId)
-        .order("updated_at", { ascending: false }),
+        .order("updated_at", { ascending: false })
+        .order("id")
+        .range(offset, offset + limit - 1),
     );
   }
   async create(value: unknown) {
@@ -137,14 +141,22 @@ export class WorkspaceService {
         .eq("user_id", this.userId),
     );
   }
-  async collections(workspaceId: string): Promise<Collection[]> {
+  async collections(
+    workspaceId: string,
+    offset = 0,
+    limit = 1000,
+  ): Promise<Collection[]> {
+    z.number().int().min(0).max(100000).parse(offset);
+    z.number().int().min(1).max(1000).parse(limit);
     await this.workspace(workspaceId);
     return checked(
       await this.db
         .from("collections")
         .select("*")
         .eq("workspace_id", workspaceId)
-        .order("created_at"),
+        .order("created_at")
+        .order("id")
+        .range(offset, offset + limit - 1),
     ) as Collection[];
   }
   async createCollection(workspaceId: string, input: unknown) {
@@ -227,6 +239,35 @@ export class WorkspaceService {
       offset: options.offset,
       limit: options.limit,
     };
+  }
+  async record(workspaceId: string, collectionId: string, recordId: string) {
+    await this.collection(workspaceId, collectionId);
+    id.parse(recordId);
+    const record = checked(
+      await this.db
+        .from("records")
+        .select("*")
+        .eq("workspace_id", workspaceId)
+        .eq("collection_id", collectionId)
+        .eq("id", recordId)
+        .maybeSingle(),
+    );
+    if (!record) throw new ServiceError("Record not found.", 404);
+    return record;
+  }
+  async revision(workspaceId: string, revision: number) {
+    await this.workspace(workspaceId);
+    z.number().int().positive().parse(revision);
+    const result = checked(
+      await this.db
+        .from("interface_revisions")
+        .select("*")
+        .eq("workspace_id", workspaceId)
+        .eq("revision", revision)
+        .maybeSingle(),
+    );
+    if (!result) throw new ServiceError("Revision not found.", 404);
+    return result;
   }
   async aggregate(workspaceId: string, collectionId: string, fieldKey: string) {
     const collection = await this.collection(workspaceId, collectionId);
@@ -333,7 +374,9 @@ export class WorkspaceService {
       );
     return result;
   }
-  async revisions(workspaceId: string) {
+  async revisions(workspaceId: string, offset = 0, limit = 20) {
+    z.number().int().min(0).max(100000).parse(offset);
+    z.number().int().min(1).max(100).parse(limit);
     await this.workspace(workspaceId);
     return checked(
       await this.db
@@ -341,7 +384,7 @@ export class WorkspaceService {
         .select("revision,definition,created_at")
         .eq("workspace_id", workspaceId)
         .order("revision", { ascending: false })
-        .limit(20),
+        .range(offset, offset + limit - 1),
     );
   }
 }

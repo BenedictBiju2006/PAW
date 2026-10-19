@@ -5,6 +5,7 @@ import { api } from "../lib/api";
 import { DataView } from "./renderer";
 import dynamic from "next/dynamic";
 import InterfaceBuilder from "./interface-builder";
+import Chat from "./chat";
 import { isEmptyInterface } from "../../../packages/a2ui/document";
 const InterfaceRenderer = dynamic(() => import("./a2ui-runtime"), {
   ssr: false,
@@ -20,7 +21,7 @@ export default function Dashboard({ configured }: { configured: boolean }) {
   const [workspaces, setWorkspaces] = useState<Summary[]>([]);
   const [active, setActive] = useState<Workspace | null>(null);
   const [collections, setCollections] = useState<Collection[]>([]);
-  const [tab, setTab] = useState<"workspace" | "data" | "interface">(
+  const [tab, setTab] = useState<"workspace" | "data" | "interface" | "chat">(
     "workspace",
   );
   const [epoch, setEpoch] = useState(0);
@@ -379,20 +380,24 @@ export default function Dashboard({ configured }: { configured: boolean }) {
                 </div>
               </div>
               <div className="tabs" role="tablist" aria-label="Workspace views">
-                {(["workspace", "data", "interface"] as const).map((t) => (
-                  <button
-                    key={t}
-                    role="tab"
-                    aria-selected={tab === t}
-                    onClick={() => setTab(t)}
-                  >
-                    {t === "workspace"
-                      ? "Workspace"
-                      : t === "data"
-                        ? "Collections & data"
-                        : "Interface builder"}
-                  </button>
-                ))}
+                {(["workspace", "data", "interface", "chat"] as const).map(
+                  (t) => (
+                    <button
+                      key={t}
+                      role="tab"
+                      aria-selected={tab === t}
+                      onClick={() => setTab(t)}
+                    >
+                      {t === "workspace"
+                        ? "Workspace"
+                        : t === "data"
+                          ? "Collections & data"
+                          : t === "interface"
+                            ? "Interface builder"
+                            : "Chat"}
+                    </button>
+                  ),
+                )}
               </div>
               {tab === "workspace" &&
                 (active.interfaceError ? (
@@ -503,6 +508,9 @@ export default function Dashboard({ configured }: { configured: boolean }) {
                     </div>
                   )}
                 </>
+              )}
+              {tab === "chat" && (
+                <Chat key={active.id} workspaceId={active.id} />
               )}
               {tab === "interface" && (
                 <InterfaceBuilder

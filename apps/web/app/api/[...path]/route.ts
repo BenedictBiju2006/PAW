@@ -6,6 +6,11 @@ import {
   WorkspaceService,
 } from "../../../../../packages/core/services";
 
+import { ConversationService } from "../../../../../packages/conversations/services";
+import { createToolRegistry } from "../../../../../packages/tools/definitions";
+import { ToolExecutor } from "../../../../../packages/tools/executor";
+import { z } from "zod";
+
 import { isAllowedOrigin } from "../../../lib/origin";
 
 export const runtime = "nodejs";
@@ -86,13 +91,61 @@ async function handle(
     } = await db.auth.getUser();
     if (error || !user) throw new ServiceError("Please sign in.", 401);
     const service = new WorkspaceService(db, user.id);
+    // Tool execution is authenticated, bounded and CSRF-protected by the same
+    // route boundary as manual operations. Permissions are selected by the host.
+    if (path[0] === "tools" && path.length === 1 && req.method === "POST") {
+      const request = z
+        .object({
+          toolId: z.string().max(100),
+          arguments: z.record(z.string(), z.json()),
+          workspaceId: z.uuid().optional(),
+        })
+        .strict()
+        .parse(body);
+      const executor = new ToolExecutor(createToolRegistry(), {
+        service,
+        workspaceId: request.workspaceId,
+        permissions: new Set(["read", "write", "delete"]),
+      });
+      const result = await executor.execute(request.toolId, request.arguments);
+      return NextResponse.json(result, {
+        headers: { "Cache-Control": "no-store" },
+      });
+    }
     const [resource, workspaceId, child, childId, recordId] = path;
     const method = req.method;
     if (resource === "catalog" && method === "GET")
       return NextResponse.json(service.catalog());
     if (resource !== "workspaces") throw new ServiceError("Not found.", 404);
     let data: unknown;
-    if (!workspaceId && method === "GET") data = await service.list();
+    if (child === "conversations") {
+      if (path.length > 5 || (recordId && recordId !== "messages"))
+        throw new ServiceError("Not found.", 404);
+      const conversations = new ConversationService(db, service);
+      const paging = Object.fromEntries(req.nextUrl.searchParams);
+      if (!childId && !recordId && method === "GET")
+        data = await conversations.list(workspaceId, paging);
+      else if (!childId && !recordId && method === "POST")
+        data = await conversations.create(workspaceId, body.title);
+      else if (childId && !recordId && method === "PATCH")
+        data = await conversations.rename(workspaceId, childId, body.title);
+      else if (childId && !recordId && method === "DELETE") {
+        await conversations.remove(workspaceId, childId, body.confirmed);
+        data = { ok: true };
+      } else if (childId && recordId === "messages" && method === "GET")
+        data = await conversations.messages(workspaceId, childId, paging);
+      else if (childId && recordId === "messages" && method === "POST") {
+        // Public chat cannot impersonate assistant/tool roles or forge activity.
+        const { text } = z
+          .object({ text: z.string().trim().min(1).max(50000) })
+          .strict()
+          .parse(body);
+        data = await conversations.append(workspaceId, childId, {
+          role: "user",
+          content: [{ type: "text", text }],
+        });
+      } else throw new ServiceError("Method not allowed.", 405);
+    } else if (!workspaceId && method === "GET") data = await service.list();
     else if (!workspaceId && method === "POST")
       data = await service.create(body.name);
     else if (workspaceId && !child) {
