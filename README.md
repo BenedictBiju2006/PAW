@@ -1,118 +1,210 @@
 # PAW
 
-Persistent Agentic Workspaces. Milestone 1 implements a Next.js application with Supabase email/password authentication, private workspaces, typed collections and records, and a saved declarative interface. AI conversation and tool discovery belong to later milestones.
+Persistent Agentic Workspaces. Milestone 1.5 adds **A2UI v0.9.1** to the existing Next.js/Supabase runtime and replaces the decorative frontend with Ranked's restrained black-and-white design language. Authentication, private workspaces, typed collections, record operations, and revision history remain supported. LLMs, conversations, MCP, and agent tool discovery are later milestones.
 
-## Run the app
+## Run locally
 
-Requires Node.js 22 or newer (validated with Node 24) and npm. Use the existing checkout; a separate Git worktree is unnecessary.
+Use Node.js 24 (`.nvmrc`) and npm from the existing checkout; no additional Git worktree is needed.
 
 ```sh
 npm ci
 cp apps/web/.env.example apps/web/.env.local
-# Set the project URL and publishable key in .env.local.
+# Fill in your Supabase project URL and publishable/anon key.
 npm run dev
 ```
 
-The two connection variables are `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. A legacy `NEXT_PUBLIC_SUPABASE_ANON_KEY` is also accepted. They are resolved by the server at runtime. No service-role key, database password, or OpenAI key is needed to run Milestone 1. Never put privileged Supabase credentials in a public environment variable or commit `.env.local`.
+Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` in `apps/web/.env.local` or your server environment. `NEXT_PUBLIC_SUPABASE_ANON_KEY` is accepted for legacy projects. Never use a service-role key here. `.env.local` is ignored by Git; no OpenAI key is required.
 
-For production, set these variables on the Next.js host, then run `npm run build` and `npm start`. Use HTTPS. When running behind a reverse proxy, set `PAW_APP_ORIGIN` to the public app origin (scheme and hostname, without a trailing slash) so origin checks use the external URL. The app uses HTTP-only, SameSite=Lax cookies, with Secure cookies in production. Every API request validates the user with Supabase Auth; mutation requests also require a matching Origin header. Browser auth/data operations go through server endpoints.
+Open `http://localhost:3000`. To explicitly fix the request origin, set `PAW_APP_ORIGIN=http://localhost:3000`, restart the app, and use that exact URL. Do not leave a production example origin set locally. Hostnames and ports must match; `localhost` and `127.0.0.1` are different origins. When unset, development accepts a matching request Host even when Next.js builds its internal URL using `0.0.0.0`. Production retains strict origin checks.
 
-## Supabase project setup (required once)
+For production, set connection variables, run `npm run build`, then `npm start`. Use HTTPS. Behind a reverse proxy, set `PAW_APP_ORIGIN` to the public origin with no trailing slash. Connection variables are read at runtime. Sessions use HTTP-only, SameSite=Lax cookies, with Secure cookies in production. Every protected API request verifies the Supabase user; data access uses that user's token, never an administrative bypass.
 
-Connecting a repository to Supabase does **not by itself confirm that database migrations have run**. There are two supported ways to apply the migration:
+## Apply database migrations
 
-1. In your Supabase project, open **SQL Editor**, create a new query, paste the complete contents of [`supabase/migrations/202610200001_milestone_one.sql`](supabase/migrations/202610200001_milestone_one.sql), and run it once against a fresh PAW schema. The migration creates the four Milestone 1 tables, their indexes, validation triggers, revision capture, and row-level security policies.
-2. If your project uses the Supabase CLI migration workflow, authenticate the CLI, link the project, inspect the pending changes, and push migrations:
+**If Milestone 1 is already installed**, apply only the new forward migration:
 
-   ```sh
-   supabase init  # Generate CLI configuration if not initialized yet
-   supabase login
-   supabase link --project-ref YOUR_PROJECT_REF
-   supabase db push --dry-run
-   supabase db push
-   ```
+[`supabase/migrations/202610200002_a2ui.sql`](supabase/migrations/202610200002_a2ui.sql)
 
-Use a recent Supabase CLI. Database authentication stays in your local secure CLI flow. If you apply SQL manually and later adopt CLI migrations, reconcile migration history with `supabase migration repair` before pushing; do not run the initial SQL twice. Do not apply `tests/*bootstrap.sql` or `tests/auth-claims.sql` to a hosted project: those files create disposable local test backends only.
+In the Supabase dashboard, open **SQL Editor**, paste that entire file into a new query, and run it once. Apply it before using this app version. The original `202610200001_milestone_one.sql` is unchanged and must not be rerun on an existing installation.
 
-In Supabase **Authentication → Sign In / Providers**, enable Email. In **Authentication → URL Configuration**, set the Site URL to the app's URL and allow the development/deployment URLs you use. Email confirmation is supported: create an account, follow the confirmation email, then return to PAW and sign in. Leave email confirmation enabled for production. Configure your production SMTP sender before inviting real users. Password recovery and social login are outside this milestone.
+For a fresh project, apply both migration files in filename order. Alternatively, use the Supabase CLI's normal migration flow:
 
-No storage bucket or realtime configuration is needed. No application tables are accessible anonymously. The application deliberately uses each signed-in user's scoped token and never uses a service-role bypass.
+```sh
+supabase init # Only if you have not initialized CLI configuration
+supabase login
+supabase link --project-ref YOUR_PROJECT_REF
+supabase db push --dry-run
+supabase db push
+```
 
-## Manually configure a workspace
+If earlier SQL was applied manually, reconcile the CLI migration history with `supabase migration repair` first. Repository integration alone does not confirm migrations have been deployed. Never run `tests/*bootstrap.sql`, `tests/auth-claims.sql`, or `tests/legacy-fixture.sql` on your hosted project.
 
-1. Sign up or sign in, then create a workspace. A new workspace starts with an empty interface.
-2. Open **Collections & data → New collection**. Define field labels and keys, their types, required flags, and enum options. Field types are string, number, boolean, date, and enum. Schemas are immutable in this milestone so existing records cannot be invalidated by a field edit.
-3. Add records, edit existing records, and use exact-match filters, typed sorting, and pagination (25 per page). Deletion requires confirmation. Updates use the last-read timestamp to reject stale edits.
-4. Open **Interface builder**. Add a heading, or use a collection's **form & table** shortcut. Save the interface and return to **Workspace** to use it. A form's inputs are generated from its collection schema.
-5. Reload the app or sign out and back in. Workspaces, records, and the interface are stored in PostgreSQL. The current workspace is kept in the URL and reopens after reload.
+In Supabase **Authentication → Sign In / Providers**, enable Email. Set your Site URL and allowed development/deployment URLs under **Authentication → URL Configuration**. Email confirmation is supported: confirm the account, return to PAW, and sign in. Keep confirmation enabled for production and configure a production SMTP sender before inviting real users. Password recovery and social login are outside this milestone. No storage bucket or realtime setup is required.
 
-The JSON editor supports this versioned component contract:
+## Create and use an A2UI interface
+
+1. Sign in and create a workspace.
+2. Open **Collections & data**, create a collection, and define its fields. Supported types are string, number, boolean, date, and enum. Collection schemas remain immutable to protect existing records.
+3. Add or edit records. Exact-match filtering, typed sorting, and bounded pagination remain available. Edits reject stale timestamps; destructive operations require confirmation.
+4. Open **Interface builder**. Use the heading, form/table, and chart shortcuts or author A2UI messages directly. Validation and the preview update immediately.
+5. Save, then open **Workspace** to use the resulting form, table, chart, inputs, and buttons. Changes go to Supabase without an LLM.
+6. Reload or sign out and back in. The saved interface and records persist, and the workspace URL reopens the same workspace.
+
+The preview is intentionally **read-only for persistent mutations**: you can exercise transient input bindings and tabs, but forms and table mutations are disabled, and record-creating button events are rejected. Save the interface and use the Workspace tab to change stored records. Unsaved preview state is transient and is not written into the saved definition.
+
+## Official A2UI implementation
+
+Protocol and package versions are different:
+
+- Protocol: **v0.9.1**, the [current production specification](https://a2ui.org/specification/v0.9.1-a2ui/).
+- Packages: pinned, compatible `@a2ui/react@0.14.0` and `@a2ui/web_core@0.14.0`.
+- A root npm override pins the renderer’s transitive DOMPurify dependency to patched version 3.4.17. PAW text rendering does not enable HTML or Markdown.
+- Imports use `/v0_9`, whose released message schemas explicitly accept v0.9.1.
+- `MessageProcessor`, `A2uiMessageListWrapperSchema`, strict catalog/topology validation, the generic binder, two-way setters, event dispatch, and `A2uiSurface` come from the official packages.
+- PAW supplies React implementations through the documented `createComponentImplementation` catalog extension API, using the official standard component property schemas and shared monochrome design tokens. PAW does not interpret a second node-tree protocol.
+
+The authoritative definition is the official `{ "messages": [...] }` wrapper. A minimal example:
 
 ```json
 {
-  "version": 1,
-  "nodes": [
-    { "id": "intro", "type": "heading", "text": "My workspace" },
-    { "id": "description", "type": "text", "text": "A place for my records." },
-    { "id": "entry", "type": "form", "collectionId": "COLLECTION_UUID" },
-    { "id": "items", "type": "table", "collectionId": "COLLECTION_UUID" }
+  "messages": [
+    {
+      "version": "v0.9.1",
+      "createSurface": {
+        "surfaceId": "workspace",
+        "catalogId": "https://paw.local/catalogs/workspace-v1.json"
+      }
+    },
+    {
+      "version": "v0.9.1",
+      "updateComponents": {
+        "surfaceId": "workspace",
+        "components": [
+          {
+            "id": "root",
+            "component": "Column",
+            "children": ["heading", "entry", "table"]
+          },
+          {
+            "id": "heading",
+            "component": "Text",
+            "text": { "path": "/title" },
+            "variant": "h2"
+          },
+          {
+            "id": "entry",
+            "component": "CollectionForm",
+            "collectionId": "COLLECTION_UUID"
+          },
+          {
+            "id": "table",
+            "component": "DataTable",
+            "collectionId": "COLLECTION_UUID"
+          }
+        ]
+      }
+    },
+    {
+      "version": "v0.9.1",
+      "updateDataModel": {
+        "surfaceId": "workspace",
+        "path": "/",
+        "value": { "title": "My workspace" }
+      }
+    }
   ]
 }
 ```
 
-Replace `COLLECTION_UUID` with the ID shown in the collection schema panel. Supported components are `heading`, `text`, `container`, `tabs`, `button`, `form`, `table`, `list`, and `chart`. Containers and tabs accept `children`; tab labels use each child's `text` or ID. Charts require `collectionId` and a `field` key, and display value counts over the entire collection, limited to the 100 most frequent distinct values. Numeric aggregates (sum, average, min, max) are available through the core service. Buttons refresh workspace data. Arbitrary URLs, HTML, scripts, event handlers, and generated code are not accepted.
+Replace `COLLECTION_UUID` with the ID shown in the collection schema panel. The catalog ID is a stable identifier, not a URL the runtime fetches; the catalog is registered locally. The definition can include up to eight surfaces, but all remain within the same workspace and revision. Each surface must have a `root` component. PAW bounds documents to 200 messages, 200 components per surface, 16 graph levels, and 250,000 characters. Cycles, dangling references, unsupported components/functions/events, and foreign collection bindings are rejected.
 
-Stable IDs must be unique. Definitions are capped at 200 components and eight nesting levels. Bindings may only reference collections and fields in the same workspace. Every save checks the expected revision; a stale session must reload before saving. **Revision history** restores a previous definition as a new revision. Interface changes never delete collection records.
+`updateComponents` and `updateDataModel` messages can be appended to a document and replayed to reconstruct its state. Component IDs remain stable. PAW limits component IDs to ASCII letters, digits, and underscores (starting with a letter or underscore), at most 64 characters. Updates are validated by the official processor. To remove components while maintaining strict no-orphan validation, edit the initial component set or delete and recreate the surface with the intended components using official messages. No records are deleted when surfaces or components change.
 
-A2UI was considered as specified in the requirements. Milestone 1 uses PAW's small, closed JSON contract to keep validation and persistence explicit without an additional renderer dependency. A later adapter can translate this contract without changing the storage boundary.
+## Catalog, bindings, and actions
 
-## Layout and API
+The catalog source is [`packages/a2ui/catalog.ts`](packages/a2ui/catalog.ts), with a generated [machine-readable JSON catalog](packages/a2ui/catalog.json). The authenticated `GET /api/catalog` endpoint exposes the same catalog. Regenerate JSON after schema changes with `npm run catalog:generate`. The builder displays the catalog for reference.
 
-- `apps/web`: Next.js App Router, authenticated route handlers, responsive UI, and the deterministic React renderer.
-- `packages/core/schema.ts`: shared validated collection, record, interface, and binding contracts.
-- `packages/core/services.ts`: route-independent workspace/data/interface services, explicit ownership checks, user-scoped Supabase access.
-- `supabase/migrations`: PostgreSQL schema, composite scope foreign keys, RLS, database-side validation, immutable revision history, and aggregation.
+| Components              | Purpose                                                                                        |
+| ----------------------- | ---------------------------------------------------------------------------------------------- |
+| `Text`                  | Text and heading variants `h1`–`h5`, `body`, `caption`                                         |
+| `Column`, `Row`         | Layout through component ID references                                                         |
+| `Card`, `Divider`       | Containers and separators                                                                      |
+| `TextField`, `CheckBox` | Official dynamic values and two-way bindings                                                   |
+| `Tabs`, `List`          | Tab children and static or data-model-template lists                                           |
+| `Button`                | Official A2UI action dispatch                                                                  |
+| `CollectionForm`        | Typed inputs from a persistent collection schema; creates a record                             |
+| `DataTable`             | Persistent records; table/list presentation, editing, deletion, filtering, sorting, pagination |
+| `CollectionChart`       | Full-collection value counts for a field; top 100 distinct values                              |
 
-Endpoints under `/api`:
+Persistent components require a static `collectionId` in the current workspace. `CollectionChart` also requires a valid field key. Their optional `title` is a dynamic string. Records are fetched from the authenticated API; they are not stored in interface JSON or treated as transient A2UI model state.
 
-| Path                                                            | Methods            | Purpose                             |
-| --------------------------------------------------------------- | ------------------ | ----------------------------------- |
-| `/auth/signup`, `/auth/signin`, `/auth/signout`                 | POST               | Cookie-backed authentication        |
-| `/auth/session`                                                 | GET                | Current authenticated identity      |
-| `/workspaces`                                                   | GET, POST          | List/create workspaces              |
-| `/workspaces/:id`                                               | GET, PATCH, DELETE | Load/rename/delete workspace        |
-| `/workspaces/:id/collections`                                   | GET, POST          | Inspect/create collections          |
-| `/workspaces/:id/collections/:collectionId`                     | GET, POST          | Query/create records                |
-| `/workspaces/:id/collections/:collectionId/:recordId`           | PATCH, DELETE      | Edit/delete record                  |
-| `/workspaces/:id/collections/:collectionId/aggregate?field=key` | GET                | Value counts and numeric aggregates |
-| `/workspaces/:id/interface`                                     | PUT                | Save `{definition, revision}`       |
-| `/workspaces/:id/revisions`                                     | GET                | Latest 20 interface revisions       |
+For ordinary inputs, bind a value using `{ "path": "/draft/title" }` and initialize it with `updateDataModel`. The official binder propagates input changes to other bound components. A Button can create a record with:
 
-Record writes accept `{data}`; edits additionally require `updatedAt` from the previously read record. Destructive requests require `{confirmed: true}`. Record queries accept `offset`, `limit` (1–100), `sort` (field key), `direction` (`asc`/`desc`), `filter` (field key), and `value` (exact typed value). The server does not accept caller-supplied ownership or SQL expressions.
-
-## Validation
-
-```sh
-npm test                 # Core validation contracts
-npm run typecheck
-npm run build
-npm run test:integration # Requires Docker; isolated Postgres + PostgREST
-npm run test:browser     # Requires Docker, a production build, and Chromium
+```json
+{
+  "id": "submit",
+  "component": "Button",
+  "child": "submit_label",
+  "action": {
+    "event": {
+      "name": "paw.createRecord",
+      "context": {
+        "collectionId": "COLLECTION_UUID",
+        "data": { "path": "/draft" }
+      }
+    }
+  }
+}
 ```
 
-Browser tests use `/usr/bin/chromium`; set `CHROMIUM_PATH` for another installed Chromium executable. If system Chromium is unavailable, run `npx playwright install chromium`; the tests fall back to Playwright’s managed browser. The browser test owns port 3100 temporarily; stop other processes using that port first.
+Declare `submit_label` as a Text component and reference `submit` from the root layout. `paw.refresh` is the other supported event. No arbitrary navigation, scripts, HTML injection, SQL, external network actions, or client functions are exposed. Text is rendered as plain React text rather than unsafe HTML/Markdown. Actual persistence still goes through the authorized `WorkspaceService`, and successful mutations refresh collection-backed views.
 
-The integration runner starts disposable PostgreSQL 17 and PostgREST containers, applies the actual migration, and exercises services with separate user JWTs. It tests persistence through a new client, RLS reads and writes, invalid direct writes, scope constraints, pagination and numeric sorting, revision transactions, data-preserving interface rollback, stale record updates, aggregation, and deletion cascades.
+## Existing interfaces and revision history
 
-The browser runner adds the real Supabase Auth (GoTrue) service and a test-only local gateway. It validates account creation, HTTP-only cookies, workspace/collection/record creation, interface rendering, record edits, page reload, sign-out/sign-in persistence, a second isolated account, CSRF rejection, and desktop/mobile rendering. Email is auto-confirmed **only in this disposable local backend**. Neither runner uses your hosted project or changes your production Auth settings. Containers and test databases are removed on exit.
+The forward migration preserves every workspace, collection, record, RLS policy, and original revision payload. It changes the default for newly created workspaces and adds database validation for A2UI message envelopes, catalog components, properties, graph references, scopes, and limits. Existing record validators, immutable history capture, and optimistic revision updates remain in place. Application validation additionally uses the official full protocol/catalog processor, including nested dynamic properties and A2UI semantics.
 
-## Hosted acceptance check
+Previously saved `{version:1,nodes:[...]}` definitions are converted **deterministically on read** by `packages/a2ui/legacy.ts`. Headings/text become Text components; layouts become Columns/Tabs; persistent components become PAW catalog components; refresh buttons become A2UI Buttons. Reserved IDs and legacy hyphens are renamed consistently with their references. The original database definition is unchanged until a user saves the converted A2UI definition as a new revision.
 
-After applying the migration and starting the app with your hosted connection settings:
+If conversion fails, the app displays an explicit compatibility error and exposes the untouched source in the builder for recovery. It never silently drops unknown components or overwrites the old definition. Data management remains available independently of interface recovery. Saving/restoring a legacy revision converts it through the same compatibility boundary before validation and creates a new revision. Existing revision JSON is never rewritten. The builder shows the latest 20 revisions and allows inspecting each original payload.
 
-1. Sign in as account A, create a workspace and collection, add a record, and save a form/table interface.
-2. Use the rendered form and edit a table record. Reload, reopen the workspace, and verify the same data and interface.
-3. Sign out, sign back in, and verify persistence.
-4. Open an incognito browser as account B. Account A's workspace must not appear. Requests for A's workspace ID must return 404.
+## Services and API
 
-The repository's Supabase connection and the hosted migration deployment must be checked in your project; local validation does not establish that your hosted schema has been migrated. Agent conversations, model keys, tool discovery, and agent-driven mutations are intentionally deferred to Milestones 2–4.
+- `packages/a2ui`: official catalog schemas, validation/replay, inspection, shortcuts, and legacy conversion.
+- `packages/core`: provider-independent workspace, collection, record, interface, and aggregation services.
+- `apps/web/app/a2ui-runtime.tsx`: official React renderer and PAW catalog implementations.
+- `apps/web/app/interface-builder.tsx`: editor and preview using that exact runtime.
+- `apps/web/app/globals.css`: shared typography, spacing, borders, surfaces, radii, and interaction tokens, inspired by the four Ranked screens named in the task. No logo, decorative illustrations, gradients, or dashboard branding.
+
+`WorkspaceService.inspect()`, `catalog()`, `saveInterface()`, and `applyInterfaceMessages()` are reusable by future authorized tools. No LLM or MCP layer is implemented.
+
+| API path (under `/api`)                                         | Methods            | Purpose                                                                  |
+| --------------------------------------------------------------- | ------------------ | ------------------------------------------------------------------------ |
+| `/auth/signup`, `/auth/signin`, `/auth/signout`                 | POST               | Cookie-backed authentication                                             |
+| `/auth/session`                                                 | GET                | Verified user identity                                                   |
+| `/catalog`                                                      | GET                | Machine-readable PAW catalog (authenticated)                             |
+| `/workspaces`                                                   | GET, POST          | List/create                                                              |
+| `/workspaces/:id`                                               | GET, PATCH, DELETE | Load/rename/delete                                                       |
+| `/workspaces/:id/collections`                                   | GET, POST          | Inspect/create collections                                               |
+| `/workspaces/:id/collections/:collectionId`                     | GET, POST          | Query/create records                                                     |
+| `/workspaces/:id/collections/:collectionId/:recordId`           | PATCH, DELETE      | Edit/delete records                                                      |
+| `/workspaces/:id/collections/:collectionId/aggregate?field=key` | GET                | Counts and numeric aggregates                                            |
+| `/workspaces/:id/interface`                                     | GET, PUT, PATCH    | Inspect, save `{definition, revision}`, or append `{messages, revision}` |
+| `/workspaces/:id/revisions`                                     | GET                | Latest 20 original revision payloads                                     |
+
+Record writes use `{data}`; edits also require `updatedAt`. Deletions require `{confirmed:true}`. Record queries accept `offset`, `limit` (1–100), `sort`, `direction` (`asc`/`desc`), `filter`, and exact typed `value`. Ownership is always derived from the verified session. Interface saves use compare-and-swap on the expected revision.
+
+## Verification
+
+```sh
+npm run typecheck
+npm test
+npm run build
+npm run test:integration
+npm run test:browser
+```
+
+Integration/browser runners require Docker and create disposable local backends. They never use your hosted Supabase project. The integration runner applies the old migration, seeds a legacy workspace, then applies the new migration and verifies conversion, original history preservation, and rollback. It also covers persistent CRUD, RLS reads/writes, validation bypass attempts, scopes, revision conflicts, aggregates, sorting, and pagination.
+
+The browser runner adds real local Supabase Auth (GoTrue) with auto-confirmation only in that disposable backend. It verifies sign-up/sign-in, interface authoring and immediate preview, invalid component rejection, two-way A2UI binding, A2UI-driven persistent writes, table/chart refresh, reload persistence, second-account isolation, CSRF checks, and desktop/mobile screens. It requires a production build and temporarily owns port 3100. It uses `CHROMIUM_PATH`, system `/usr/bin/chromium`, or Playwright's managed Chromium (`npx playwright install chromium`). Containers are removed on exit.
+
+Hosted acceptance remains a separate check after applying the forward migration: sign in, create a collection and A2UI form/table, save, create/edit records, reload, sign out/in, and confirm a second account cannot access the workspace. Hosted migration deployment and production email delivery are not established by passing local tests.

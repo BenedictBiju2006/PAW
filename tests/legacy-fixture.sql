@@ -1,0 +1,5 @@
+-- Applied ONLY between the two migrations in the disposable integration DB.
+insert into public.workspaces(id,user_id,name) values ('33333333-3333-4333-8333-333333333333','11111111-1111-4111-8111-111111111111','Legacy workspace');
+insert into public.collections(id,workspace_id,name,fields) values ('44444444-4444-4444-8444-444444444444','33333333-3333-4333-8333-333333333333','Legacy data','[{"key":"title","label":"Title","type":"string","required":true}]');
+insert into public.records(workspace_id,collection_id,data) values ('33333333-3333-4333-8333-333333333333','44444444-4444-4444-8444-444444444444','{"title":"Keep this record"}');
+update public.workspaces set interface = '{"version":1,"nodes":[{"id":"root","type":"heading","text":"Keep this heading"},{"id":"group","type":"container","children":[{"id":"form","type":"form","collectionId":"44444444-4444-4444-8444-444444444444"},{"id":"table","type":"table","collectionId":"44444444-4444-4444-8444-444444444444"}]},{"id":"refresh","type":"button","text":"Reload records"}]}' where id = '33333333-3333-4333-8333-333333333333';

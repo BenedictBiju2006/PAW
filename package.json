@@ -3,17 +3,19 @@
   "version": "0.1.0",
   "private": true,
   "workspaces": [
-    "apps/*"
+    "apps/*",
+    "packages/*"
   ],
   "scripts": {
     "dev": "npm run dev --workspace apps/web",
     "build": "npm run build --workspace apps/web",
     "start": "npm run start --workspace apps/web",
     "typecheck": "tsc --noEmit -p apps/web/tsconfig.json",
-    "test": "tsx --test tests/core.test.ts",
+    "test": "tsx --test tests/core.test.ts tests/a2ui.test.ts",
     "test:integration": "bash scripts/test-integration.sh",
     "test:browser": "bash scripts/test-browser.sh",
-    "format": "prettier --write apps packages tests playwright.config.ts package.json README.md"
+    "format": "prettier --write apps packages tests playwright.config.ts package.json README.md",
+    "catalog:generate": "tsx scripts/generate-catalog.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.64.1",
@@ -30,5 +32,8 @@
   },
   "engines": {
     "node": ">=22"
+  },
+  "overrides": {
+    "dompurify": "3.4.17"
   }
 }
