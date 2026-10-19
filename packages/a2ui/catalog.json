@@ -369,94 +369,67 @@
     },
     "CollectionForm": {
       "type": "object",
-      "allOf": [
-        {
-          "$ref": "https://a2ui.org/specification/v0_9/common_types.json#/$defs/ComponentCommon"
+      "properties": {
+        "component": {
+          "const": "CollectionForm"
         },
-        {
-          "type": "object",
-          "description": "Typed collection form. Dispatches paw.createRecord with validated field data; persistent records are never embedded in the A2UI model.",
-          "properties": {
-            "component": {
-              "const": "CollectionForm"
-            },
-            "collectionId": {
-              "type": "string",
-              "format": "uuid",
-              "description": "Persistent collection in the current workspace. Cannot be a transient binding."
-            },
-            "title": {
-              "$ref": "https://a2ui.org/specification/v0_9/common_types.json#/$defs/DynamicString",
-              "description": "Represents a string"
-            }
-          },
-          "required": ["component", "collectionId"]
+        "collectionId": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Persistent collection in the current workspace. Cannot be a transient binding."
+        },
+        "title": {
+          "$ref": "https://a2ui.org/specification/v0_9/common_types.json#/$defs/DynamicString",
+          "description": "Represents a string"
         }
-      ],
+      },
+      "required": ["component", "collectionId"],
       "unevaluatedProperties": false
     },
     "DataTable": {
       "type": "object",
-      "allOf": [
-        {
-          "$ref": "https://a2ui.org/specification/v0_9/common_types.json#/$defs/ComponentCommon"
+      "properties": {
+        "component": {
+          "const": "DataTable"
         },
-        {
-          "type": "object",
-          "description": "Authorized persistent records with edit/delete actions, exact filtering, typed sorting, and pagination. Mutations refresh other collection views.",
-          "properties": {
-            "component": {
-              "const": "DataTable"
-            },
-            "collectionId": {
-              "type": "string",
-              "format": "uuid",
-              "description": "Persistent collection in the current workspace. Cannot be a transient binding."
-            },
-            "title": {
-              "$ref": "https://a2ui.org/specification/v0_9/common_types.json#/$defs/DynamicString",
-              "description": "Represents a string"
-            },
-            "presentation": {
-              "type": "string",
-              "enum": ["table", "list"]
-            }
-          },
-          "required": ["component", "collectionId"]
+        "collectionId": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Persistent collection in the current workspace. Cannot be a transient binding."
+        },
+        "title": {
+          "$ref": "https://a2ui.org/specification/v0_9/common_types.json#/$defs/DynamicString",
+          "description": "Represents a string"
+        },
+        "presentation": {
+          "type": "string",
+          "enum": ["table", "list"]
         }
-      ],
+      },
+      "required": ["component", "collectionId"],
       "unevaluatedProperties": false
     },
     "CollectionChart": {
       "type": "object",
-      "allOf": [
-        {
-          "$ref": "https://a2ui.org/specification/v0_9/common_types.json#/$defs/ComponentCommon"
+      "properties": {
+        "component": {
+          "const": "CollectionChart"
         },
-        {
-          "type": "object",
-          "description": "Full-collection aggregation for the specified field, displaying at most 100 distinct value counts.",
-          "properties": {
-            "component": {
-              "const": "CollectionChart"
-            },
-            "collectionId": {
-              "type": "string",
-              "format": "uuid",
-              "description": "Persistent collection in the current workspace. Cannot be a transient binding."
-            },
-            "field": {
-              "type": "string",
-              "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$"
-            },
-            "title": {
-              "$ref": "https://a2ui.org/specification/v0_9/common_types.json#/$defs/DynamicString",
-              "description": "Represents a string"
-            }
-          },
-          "required": ["component", "collectionId", "field"]
+        "collectionId": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Persistent collection in the current workspace. Cannot be a transient binding."
+        },
+        "field": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$"
+        },
+        "title": {
+          "$ref": "https://a2ui.org/specification/v0_9/common_types.json#/$defs/DynamicString",
+          "description": "Represents a string"
         }
-      ],
+      },
+      "required": ["component", "collectionId", "field"],
       "unevaluatedProperties": false
     }
   },
