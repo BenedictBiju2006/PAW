@@ -510,7 +510,27 @@ export default function Dashboard({ configured }: { configured: boolean }) {
                 </>
               )}
               {tab === "chat" && (
-                <Chat key={active.id} workspaceId={active.id} />
+                <Chat
+                  key={active.id}
+                  workspaceId={active.id}
+                  refresh={() => {
+                    void Promise.all([
+                      api<Workspace>(`workspaces/${active.id}`),
+                      api<Collection[]>(`workspaces/${active.id}/collections`),
+                    ])
+                      .then(([workspace, items]) => {
+                        setActive(workspace);
+                        setCollections(items);
+                        setSelectedCollection((current) =>
+                          items.some((c) => c.id === current)
+                            ? current
+                            : (items[0]?.id ?? ""),
+                        );
+                        setEpoch((e) => e + 1);
+                      })
+                      .catch((e) => setError(e.message));
+                  }}
+                />
               )}
               {tab === "interface" && (
                 <InterfaceBuilder

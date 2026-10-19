@@ -81,6 +81,28 @@ export class ConversationService {
       nextOffset: offset + limit < (result.count ?? 0) ? offset + limit : null,
     };
   }
+  async recent(
+    workspaceId: string,
+    conversationId: string,
+    before?: number,
+    limit = 40,
+  ) {
+    await this.conversation(workspaceId, conversationId);
+    z.number().int().min(1).max(100).parse(limit);
+    let query = this.db
+      .from("messages")
+      .select("*")
+      .eq("workspace_id", workspaceId)
+      .eq("conversation_id", conversationId);
+    if (before !== undefined)
+      query = query.lt("sequence", z.number().int().positive().parse(before));
+    const result = checked(
+      await query.order("sequence", { ascending: false }).limit(limit + 1),
+    ) as Message[];
+    const hasOlder = result.length > limit;
+    const messages = result.slice(0, limit).reverse();
+    return { messages, before: hasOlder ? messages[0]?.sequence : null };
+  }
   async append(
     workspaceId: string,
     conversationId: string,

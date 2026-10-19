@@ -1,6 +1,6 @@
 # PAW
 
-Persistent Agentic Workspaces. Milestone 2 adds discoverable tools, an official MCP SDK adapter, and persistent workspace conversations alongside the A2UI v0.9.1 runtime and existing manual tools. LLM inference belongs to Milestone 3.
+Persistent Agentic Workspaces. Milestone 3 adds live OpenAI Responses inference, discovery-driven tool execution, secure per-user credentials, and streaming chat alongside the A2UI v0.9.1 runtime and existing manual tools.
 
 ## Run locally
 
@@ -24,7 +24,8 @@ For production, set connection variables, run `npm run build`, then `npm start`.
 Apply only the migrations your database has not received, in filename order:
 
 - Milestone 1 installation: apply [`202610200002_a2ui.sql`](supabase/migrations/202610200002_a2ui.sql), then [`202610200003_conversations.sql`](supabase/migrations/202610200003_conversations.sql).
-- Milestone 1.5 installation (A2UI already applied): apply only [`202610200003_conversations.sql`](supabase/migrations/202610200003_conversations.sql).
+- Milestone 1.5 installation (A2UI already applied): apply [`202610200003_conversations.sql`](supabase/migrations/202610200003_conversations.sql).
+- All installations upgrading to Milestone 3: apply [`202610200004_agent.sql`](supabase/migrations/202610200004_agent.sql) after the earlier migrations.
 
 In the Supabase dashboard, open **SQL Editor**, paste each pending file into a separate new query, and run it once. Apply pending migrations before using this app version. Never rerun an already-applied migration; the original milestone migrations remain unchanged.
 
@@ -212,7 +213,7 @@ Hosted acceptance remains a separate check after applying the forward migration:
 
 ## Milestone 2: discoverable tools and conversations
 
-The manual **Workspace**, **Collections & data**, and **Interface builder** views remain available. **Chat** adds multiple persisted conversations per workspace. Create, rename, switch and delete conversations, and compose multiline messages. Messages are genuinely stored; **AI responses are not yet available**. No demo responses or provider calls are generated. The same current workspace data and interface are shared across all conversations.
+The manual **Workspace**, **Collections & data**, and **Interface builder** views remain available. **Chat** adds multiple persisted conversations per workspace. Create, rename, switch and delete conversations, and compose multiline messages. Messages are genuinely stored. Milestone 3 adds live AI responses when a provider is configured; no demo responses are generated. The same current workspace data and interface are shared across all conversations.
 
 ### Migration
 
@@ -271,8 +272,74 @@ The MCP adapter initially exposes only the four bootstrap tool schemas through `
 | `/conversations/:id`                       | PATCH, DELETE | `{title}` or explicit manual `{confirmed:true}` |
 | `/conversations/:id/messages`              | GET, POST     | GET accepts `offset,limit`; POST `{text}`       |
 
-Lists return `{conversations,nextOffset}` or `{messages,nextOffset}`. Pagination is bounded and uses stable database ordering; it is not a multi-request snapshot during simultaneous writes. The composer loads remaining history before appending. Structured tool blocks are rendered as restrained expandable activity details, ready for future stream events.
+Lists return `{conversations,nextOffset}` or `{messages,nextOffset}`. Pagination is bounded and uses stable database ordering; it is not a multi-request snapshot during simultaneous writes. Milestone 3 adds backward pagination and streaming structured tool activity without requiring all history to load before sending.
 
-Milestone 3 should add the provider-neutral inference/stream event adapter, encrypted per-user provider credentials, cancellation and usage bounds, and a server orchestrator that starts with workspace/conversation identity plus the bootstrap discovery tools. Persist normalized assistant/tool events through `ConversationService`; never treat a stored message as authorization or authoritative workspace state. Add a real user approval flow bound to exact destructive arguments before enabling agent-triggered deletes. Hosted MCP remains optional; both provider paths must keep using this executor. No inference loop, API-key storage or model selection is implemented in Milestone 2.
+Milestone 3 implements the provider-neutral inference/stream event adapter, encrypted per-user provider credentials, cancellation and usage bounds, and a server orchestrator that starts with workspace/conversation identity plus the bootstrap discovery tools. Persist normalized assistant/tool events through `ConversationService`; never treat a stored message as authorization or authoritative workspace state. Add a real user approval flow bound to exact destructive arguments before enabling agent-triggered deletes. Hosted MCP remains optional; both provider paths must keep using this executor. These features were outside Milestone 2 and are implemented in the Milestone 3 section below.
 
 The existing five verification commands cover unit/adapter parity, deterministic tool exploration and persistence, stale/invalid operations, cross-workspace and direct-database RLS isolation, conversations and browser chat management. All integration and browser fixtures run against disposable local Docker backends, never hosted Supabase.
+
+## Milestone 3: live agent and streaming chat
+
+PAW now uses the Vercel AI SDK and **OpenAI Responses API** for real server-side inference. No ChatGPT subscription login is involved. Users supply their own separately billed API key through **Chat → AI settings**, validate access, choose a model, and replace/remove the key. Manual workspace, collection and interface tools remain accessible when AI is unconfigured or unavailable. Without a configured provider, chat can still save user text.
+
+### Required deployment steps
+
+1. Apply the new forward migration [`202610200004_agent.sql`](supabase/migrations/202610200004_agent.sql) **after all three previous migrations**. Paste the complete file into Supabase SQL Editor and run once, or deploy pending migrations with your usual CLI process. Never rerun previously applied files. The older deployed migrations are unchanged.
+2. Set `SUPABASE_SECRET_KEY` (or legacy `SUPABASE_SERVICE_ROLE_KEY`) on the **server only**, using the same Supabase project. This privileged client is used for encrypted settings, narrow trusted-event RPCs, and turn cancellation. Workspace tools still use the authenticated user's client and existing RLS/services.
+3. Generate an independent encryption key with `openssl rand -base64 32` and set `PAW_CREDENTIAL_ENCRYPTION_KEY` on the server. Set `PAW_CREDENTIAL_KEY_VERSION=1`. Never send these secrets in chat, commit them, or prefix them with `NEXT_PUBLIC_`. Keep the encryption key stable and backed up separately from the database. Missing encryption configuration disables key persistence; there is no plaintext fallback.
+4. Restart/redeploy, open a workspace's Chat tab, select **AI settings**, enter an OpenAI API key, and click **Validate & save**. Validation checks access to the chosen model with OpenAI's model endpoint; it makes no inference request.
+
+Credentials use AES-256-GCM, a fresh 12-byte nonce, authentication tag, envelope/key-version metadata, and user/provider/version-bound associated data. A credential encrypted for one user cannot be decrypted as another user. Settings responses contain configuration state, model choices, warning preferences and usage, **never ciphertext or the API key**. Ordinary authenticated Supabase clients have no access to `provider_settings`. Encryption/decryption modules are reachable only from server routes, not browser components. Changing the encryption key/version without migrating existing ciphertext requires users to replace their saved keys; a multi-key rotation service is not implemented.
+
+`PAW_OPENAI_MODELS` defaults to the documented Responses-compatible models `gpt-4.1-mini,gpt-4.1`. Administrators may configure a comma-separated list of verified supported model IDs. Saved selections must remain in that list and pass the provider access check. Only OpenAI is shipped; the orchestration tests use a second scripted provider with the same contract.
+
+### Agent and streaming architecture
+
+- `packages/agent/provider.ts` and `providers/openai.ts`: provider-neutral streaming/tool/usage/error/cancellation contract and its OpenAI AI SDK implementation. Dependencies are pinned to compatible installed versions. OpenAI requests use Responses, `store:false`, and no automatic request retries.
+- `orchestrator.ts`: bounded multi-step loop over the existing registry and `ToolExecutor`. The initial model request exposes **only** the four bootstrap discovery tools plus `invoke_tool`. Dispatch requires successful `describe_tool` inspection during the current turn. The system prompt contains workspace/conversation identity and exploration/security instructions, not all tool schemas, record contents, component catalogs, or example application workflows.
+- `context.ts`: recent bounded history; only genuine user messages and server-trusted assistant/tool output enter model context. Legacy assistant/system/tool inserts are not promoted to trusted instructions. Historical tool results are quoted as data; current workspace state must be inspected through tools.
+- `store.ts`: trusted event persistence through ownership-checking, service-role-only RPCs. User messages are persisted atomically with turn acceptance **before inference**. Tool-start events are persisted before execution; tool results and partial/final assistant output are provider-neutral messages.
+- `apps/web/lib/agent.ts`: verified-session streaming and cancellation host. The browser sends a conversation/workspace identity, latest text and stable turn UUID; it cannot supply roles, tools, provider keys, system prompts, permissions or historical messages.
+- Chat uses `useChat`, `DefaultChatTransport`, `createUIMessageStream` and `createUIMessageStreamResponse`, following the AI SDK UI message SSE protocol. Native text chunks carry progressive output; SDK data parts carry actual tool activity, mutation invalidation and turn/usage status. No proprietary SSE parser or alternative UI schema is introduced.
+
+The compact conversation sidebar becomes a navigation panel on mobile. Messages use restrained user bubbles and unboxed assistant Markdown. Raw HTML is skipped; the Markdown renderer's safe URL handling rejects script URLs. Code blocks have a copy action. The composer grows to a bounded height, supports Enter/Shift+Enter, and provides a stop control. Near-bottom readers follow streamed text; users reading earlier messages are not forcibly scrolled. Opening a conversation loads the newest 40 messages, with cursor-based backward pagination; sending does not require loading all history. Switching threads stops the old stream and requests cancellation without mixing its transcript into the new thread.
+
+Tool details are collapsed by default and contain redacted arguments, actual execution status, and bounded results/errors. Successful write results emit a workspace invalidation event; PAW refreshes collections and the current A2UI definition without changing tabs or reloading the page. Existing record/A2UI validation, ownership and expected-revision checks remain mandatory. Destructive agent calls are **still blocked** and shown as approval-required; only genuine manual controls can authorize deletion in this milestone.
+
+### Trusted messages, retries and cancellation
+
+The migration removes the permissive message-insert policy. Direct authenticated clients can append only a single user text block, with empty metadata and no trusted/turn/event identity. Forged assistant/system/tool roles, claimed provider metadata, trusted flags and trusted-event RPCs are rejected. Trusted writes verify the initiating user's current ownership of the conversation and workspace inside each RPC. Existing history is preserved, but old non-user rows have `trusted=false` and are excluded from model instructions.
+
+`agent_turns` records status, provider/model, request hash, token usage, cancellation state and completion notices. A stable client-generated UUID identifies each submission. A duplicate identity with the same input returns the existing turn; a mismatched payload fails. A database lock and unique active-turn index prevent overlapping inference within one conversation. Event identities are unique per turn. Identical mutation attempts within a turn reuse the first result, including uncertain failures, rather than issuing the same non-idempotent operation again. This is at-most-once attempt protection, not an assertion of transactional exactly-once semantics across a model and remote database.
+
+Stop/disconnect aborts further model work; cancellation is also persisted and polled across server instances. An already executing database operation may finish, and its result is recorded before stopping subsequent work. Completed operations are never described as rolled back. A server crash can leave an invocation's outcome uncertain; pending turns older than ten minutes are marked interrupted when a new turn is accepted. Such turns are never automatically resumed or replayed. Inspect current workspace state before issuing a new request. **Check / retry request** uses the same identity, so it can safely check acceptance or retry a request that never started; it does not restart a completed/failed turn. There is no live stream reattachment or background job queue.
+
+### Limits, usage and troubleshooting
+
+| Server variable               | Default       | Maximum |
+| ----------------------------- | ------------- | ------- |
+| `PAW_AGENT_MAX_STEPS`         | 24            | 40      |
+| `PAW_AGENT_MAX_TOOL_CALLS`    | 50            | 100     |
+| `PAW_AGENT_TIMEOUT_MS`        | 120000        | 300000  |
+| `PAW_AGENT_MAX_OUTPUT_TOKENS` | 8000 per turn | 20000   |
+| `PAW_AGENT_MAX_RESULT_CHARS`  | 30000         | 60000   |
+| `PAW_AGENT_MAX_CONTEXT_CHARS` | 160000        | 300000  |
+
+Initial historical context is limited to 80 recent rows / 40,000 characters. New chat inference text is bounded to 20,000 characters; generated text is bounded to 50,000. Tool arguments, results, repeated requests and message journal sizes are bounded independently. Oversized tool results return a narrowing instruction, rather than dumping entire collections into context. Completed operations are retained when a limit is reached. Configure hosting to support streaming Node.js requests for the selected duration; the route exports `maxDuration=300`, but your platform's limits still apply.
+
+Settings show available input/output token totals over the last 30 days (bounded to 10,000 turns) and a configurable **soft token warning**. Chat shows per-turn usage. Cost is marked **unknown**; no speculative pricing is used. The warning is not a hard provider billing cap. Failed/aborted requests may not yield complete usage; OpenAI billing remains authoritative.
+
+Missing server credentials/encryption configuration produces a clear configuration error while manual tools remain usable. Invalid keys/model access, quota/rate limits, network outages, cancellation and bounds produce recoverable notices. Replace/validate a key in AI settings, inspect current state, and reload saved messages before deciding to submit a new request. Behind a proxy, preserve streaming responses and set `PAW_APP_ORIGIN` correctly; the stream sets `X-Accel-Buffering: no` and retains the existing authentication/CSRF boundary.
+
+### Verification and live acceptance
+
+Run the five standard verification commands above. Tests do **not** require an OpenAI key. Unit tests cover encryption/tampering/isolation, bounded trusted history, native stream framing, discovery gating, blocked destructive actions, duplicate mutations, normalized errors and partial-output cancellation. Isolated integration tests run a scripted second provider through the real orchestrator, ToolExecutor, Supabase/PostgREST services and new RPCs: create a movie collection and A2UI form/table, recover from invalid A2UI, query current data from another conversation and add a chart without losing records. They also prove direct-database forged-role rejection, credential isolation, idempotency and permission enforcement. Browser tests use an explicit test-only stream fixture plus real disposable persistence to verify Markdown safety, activity, mutation refresh, transcript reload, conversation switching, mobile navigation and the existing manual workflow.
+
+Optional **paid**, explicitly enabled smoke test (never part of `npm test`):
+
+```sh
+PAW_LIVE_OPENAI_SMOKE=1 OPENAI_API_KEY=your-test-key npm run test:live
+# Optional PAW_LIVE_MODEL must identify a model your API account supports.
+```
+
+After deployment, validate a real user key and exercise the scenarios in your Milestone 3 brief. No live paid call is implied by passing mocked tests. Next steps are production live acceptance, a real user approval flow before agent deletion, durable background execution/reattachment if hosting requires it, and stronger operational usage controls. Additional providers and hosted MCP remain optional future work; they must share this same registry/executor.
