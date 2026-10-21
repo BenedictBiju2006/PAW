@@ -30,11 +30,12 @@ export function encryptCredential(
   secret: string,
   userId: string,
   env: NodeJS.ProcessEnv = process.env,
+  provider: string = "openai",
 ) {
   const { key, version } = credentialKey(env),
     nonce = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", key, nonce);
-  cipher.setAAD(Buffer.from(`paw:openai:${userId}:${version}`));
+  cipher.setAAD(Buffer.from(`paw:${provider}:${userId}:${version}`));
   const ciphertext = Buffer.concat([
     cipher.update(secret, "utf8"),
     cipher.final(),
@@ -51,6 +52,7 @@ export function decryptCredential(
   value: unknown,
   userId: string,
   env: NodeJS.ProcessEnv = process.env,
+  provider: string = "openai",
 ) {
   try {
     const e = envelope.parse(value),
@@ -61,7 +63,7 @@ export function decryptCredential(
       key,
       Buffer.from(e.nonce, "base64"),
     );
-    decipher.setAAD(Buffer.from(`paw:openai:${userId}:${version}`));
+    decipher.setAAD(Buffer.from(`paw:${provider}:${userId}:${version}`));
     decipher.setAuthTag(Buffer.from(e.tag, "base64"));
     return Buffer.concat([
       decipher.update(Buffer.from(e.ciphertext, "base64")),

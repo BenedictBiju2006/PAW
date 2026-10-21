@@ -108,9 +108,11 @@ async function handle(
           ? await settings.status()
           : req.method === "PUT"
             ? await settings.save(body)
-            : req.method === "DELETE"
-              ? await settings.remove()
-              : null;
+            : req.method === "PATCH"
+              ? await settings.select(body)
+              : req.method === "DELETE"
+                ? await settings.remove(body)
+                : null;
       if (!result) throw new ServiceError("Method not allowed.", 405);
       return NextResponse.json(result, {
         headers: { "Cache-Control": "no-store" },
@@ -163,7 +165,7 @@ async function handle(
         const result = await db
           .from("agent_turns")
           .select(
-            "id,status,notice,input_tokens,output_tokens,model,created_at",
+            "id,status,notice,input_tokens,output_tokens,provider,model,model_requests,tool_calls,cached_input_tokens,created_at",
           )
           .eq("workspace_id", workspaceId)
           .eq("conversation_id", childId)

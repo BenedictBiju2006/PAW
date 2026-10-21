@@ -128,9 +128,50 @@ export default function Chat({
           </button>
           <div>
             <h2>{active?.title ?? "Chat"}</h2>
-            <span className="muted">
-              {status?.configured ? status.model : "AI not configured"}
-            </span>
+            {status && (
+              <select
+                aria-label="AI model"
+                value={
+                  status.configured ? `${status.provider}:${status.model}` : ""
+                }
+                onChange={(e) => {
+                  if (e.target.value === "configure") {
+                    setSettings(true);
+                    return;
+                  }
+                  const [provider, model] = e.target.value.split(":");
+                  void run(async () =>
+                    setStatus(
+                      await api<AIStatus>("ai-settings", "PATCH", {
+                        provider,
+                        model,
+                      }),
+                    ),
+                  );
+                }}
+              >
+                <option value="" disabled>
+                  {status.configured ? "Choose model" : "AI not configured"}
+                </option>
+                {status.configured && !status.models.includes(status.model) && (
+                  <option value={`${status.provider}:${status.model}`} disabled>
+                    {status.model} (unavailable)
+                  </option>
+                )}
+                {status.providers
+                  .filter((p) => p.configured)
+                  .map((p) => (
+                    <optgroup key={p.id} label={p.name}>
+                      {p.models.map((m) => (
+                        <option key={m} value={`${p.id}:${m}`}>
+                          {m}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                <option value="configure">Add / manage provider keys…</option>
+              </select>
+            )}
           </div>
           <div className="row">
             <button onClick={() => setSettings(true)}>AI settings</button>
@@ -185,7 +226,7 @@ export default function Chat({
         </div>
         {!status?.configured && (
           <p className="muted">
-            Messages can be saved. Add your OpenAI API key in AI settings to
+            Messages can be saved. Add a provider API key in AI settings to
             receive AI responses.
           </p>
         )}
@@ -204,6 +245,21 @@ export default function Chat({
           <div className="empty-state">
             <h3>What would you like to create?</h3>
             <p>Start a new conversation in this workspace.</p>
+            <button
+              className="primary"
+              disabled={busy}
+              onClick={() =>
+                run(async () => {
+                  const c = await api<Conversation>(base, "POST", {
+                    title: "New conversation",
+                  });
+                  setConversations((items) => [c, ...items]);
+                  setActive(c);
+                })
+              }
+            >
+              Start conversation
+            </button>
           </div>
         ) : (
           <ChatThread
@@ -260,6 +316,11 @@ function ChatThread({
         notice: string;
         input_tokens: number;
         output_tokens: number;
+        provider: string;
+        model: string;
+        model_requests: number;
+        tool_calls: number;
+        cached_input_tokens: number | null;
       }[]
     >([]);
   const historyRef = useRef<Message[]>([]);
@@ -485,8 +546,11 @@ function ChatThread({
       )}
       {!running && turns[0] && (
         <p className="muted turn-status">
-          {turns[0].status} · {turns[0].input_tokens} input /{" "}
-          {turns[0].output_tokens} output tokens · cost unknown
+          {turns[0].provider} / {turns[0].model} · {turns[0].status} ·{" "}
+          {turns[0].input_tokens} input / {turns[0].output_tokens} output tokens
+          · {turns[0].model_requests} model requests · {turns[0].tool_calls}{" "}
+          tool calls · cached input {turns[0].cached_input_tokens ?? "unknown"}{" "}
+          · cost unknown
           {turns[0].notice ? ` · ${turns[0].notice}` : ""}
           {turns[0].status === "running" && (
             <button

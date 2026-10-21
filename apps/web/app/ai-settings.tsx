@@ -2,6 +2,15 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 export type AIStatus = {
+  providers: {
+    id: string;
+    name: string;
+    configured: boolean;
+    models: string[];
+    model: string;
+    tokenWarning: number;
+    dashboard: string;
+  }[];
   configured: boolean;
   encryptionReady: boolean;
   provider: string;
@@ -22,6 +31,7 @@ export default function AISettings({
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [key, setKey] = useState(""),
+    [provider, setProvider] = useState("openai"),
     [model, setModel] = useState(""),
     [warning, setWarning] = useState(100000),
     [notice, setNotice] = useState("");
@@ -31,6 +41,7 @@ export default function AISettings({
       .then((s) => {
         if (current) {
           setStatus(s);
+          setProvider(s.provider);
           setModel(s.model);
           setWarning(s.tokenWarning);
         }
@@ -53,8 +64,8 @@ export default function AISettings({
         </button>
         <h2>AI settings</h2>
         <p>
-          Use your own separately billed OpenAI API account. A ChatGPT
-          subscription does not include API usage.
+          Free-tier availability and rate limits depend on your provider
+          account. PAW does not control provider billing.
         </p>
         {error && (
           <p role="alert" className="error">
@@ -70,6 +81,7 @@ export default function AISettings({
               setBusy(true);
               try {
                 const next = await api<AIStatus>("ai-settings", "PUT", {
+                  provider,
                   ...(key ? { apiKey: key } : {}),
                   model,
                   tokenWarning: warning,
@@ -86,8 +98,8 @@ export default function AISettings({
             }}
           >
             <p>
-              {status.configured
-                ? "OpenAI configured"
+              {status.providers.find((p) => p.id === provider)?.configured
+                ? "Provider configured"
                 : "No API key configured"}
             </p>
             {!status.encryptionReady && (
@@ -97,16 +109,78 @@ export default function AISettings({
               </p>
             )}
             <label>
-              OpenAI API key
+              Provider
+              <select
+                value={provider}
+                disabled={busy}
+                onChange={(e) => {
+                  const p = status.providers.find(
+                    (p) => p.id === e.target.value,
+                  )!;
+                  setProvider(p.id);
+                  setModel(p.model);
+                  setWarning(p.tokenWarning);
+                  setKey("");
+                  setNotice("");
+                  setError("");
+                }}
+              >
+                {status.providers.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="muted">
+              Validation checks model access without inference. Tool support is
+              maintained by the server allowlist; account quota is checked by
+              the provider during use.
+            </p>
+            <p>
+              <a
+                href="https://aistudio.google.com/usage"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Gemini usage
+              </a>{" "}
+              ·{" "}
+              <a
+                href="https://ai.google.dev/gemini-api/docs/rate-limits"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Gemini limits
+              </a>{" "}
+              ·{" "}
+              <a
+                href="https://console.groq.com/usage"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Groq usage
+              </a>{" "}
+              ·{" "}
+              <a
+                href="https://console.groq.com/docs/rate-limits"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Groq limits
+              </a>
+            </p>
+            <label>
+              API key
               <input
                 type="password"
                 autoComplete="off"
                 value={key}
                 onChange={(e) => setKey(e.target.value)}
                 placeholder={
-                  status.configured
+                  status.providers.find((p) => p.id === provider)?.configured
                     ? "Leave blank to validate the saved key"
-                    : "sk-…"
+                    : "Enter API key"
                 }
                 maxLength={500}
               />
@@ -114,7 +188,17 @@ export default function AISettings({
             <label>
               Model
               <select value={model} onChange={(e) => setModel(e.target.value)}>
-                {status.models.map((m) => (
+                {model &&
+                  !status.providers
+                    .find((p) => p.id === provider)
+                    ?.models.includes(model) && (
+                    <option value={model} disabled>
+                      {model} (unavailable — choose another)
+                    </option>
+                  )}
+                {(
+                  status.providers.find((p) => p.id === provider)?.models ?? []
+                ).map((m) => (
                   <option key={m}>{m}</option>
                 ))}
               </select>
@@ -132,7 +216,7 @@ export default function AISettings({
             <p className="muted">
               {status.usage.period}: {status.usage.input.toLocaleString()} input
               / {status.usage.output.toLocaleString()} output tokens. Cost
-              unknown. This warning does not enforce an OpenAI billing cap.
+              unknown. This warning does not enforce a provider billing cap.
             </p>
             {status.warning && (
               <p role="status">Your soft token warning has been reached.</p>
@@ -146,13 +230,16 @@ export default function AISettings({
               </button>
               <button
                 type="button"
-                disabled={busy || !status.configured}
+                disabled={
+                  busy ||
+                  !status.providers.find((p) => p.id === provider)?.configured
+                }
                 onClick={async () => {
-                  if (!confirm("Remove your saved OpenAI API key?")) return;
+                  if (!confirm("Remove this provider’s saved API key?")) return;
                   setBusy(true);
                   setError("");
                   try {
-                    await api("ai-settings", "DELETE", {});
+                    await api("ai-settings", "DELETE", { provider });
                     const next = await api<AIStatus>("ai-settings");
                     setStatus(next);
                     updated(next);

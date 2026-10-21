@@ -1,4 +1,11 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
+import {
+  showChat,
+  newConversation,
+  openConversations,
+  developerTools,
+  showInterface,
+} from "./navigation";
 import { createClient } from "@supabase/supabase-js";
 // UI transport fixtures only. Scripted real-database orchestration is separately
 // exercised by integration.test.ts. Ordinary tests never call a paid provider.
@@ -11,14 +18,38 @@ test("native streaming transcript, tools, mutation refresh, safe Markdown and co
     { auth: { persistSession: false } },
   );
   const origin = process.env.PAW_BROWSER_TEST_URL!;
+  let selected = { provider: "openai", model: "gpt-4.1-mini" };
+  const providers = [
+    { id: "openai", name: "OpenAI", model: "gpt-4.1-mini" },
+    { id: "google", name: "Gemini", model: "gemini-2.5-flash" },
+    { id: "groq", name: "Groq", model: "llama-3.3-70b-versatile" },
+  ].map((p) => ({
+    ...p,
+    configured: true,
+    models: [p.model],
+    tokenWarning: 100000,
+  }));
   await page.route("**/api/ai-settings", async (route) => {
+    const method = route.request().method();
+    if (method === "PATCH" || method === "PUT") {
+      const body = route.request().postDataJSON();
+      selected = { provider: body.provider, model: body.model };
+    }
+    if (method === "DELETE") {
+      providers.find(
+        (p) => p.id === route.request().postDataJSON().provider,
+      )!.configured = false;
+      await route.fulfill({ json: { ok: true } });
+      return;
+    }
     await route.fulfill({
       json: {
-        configured: true,
+        providers,
+        configured: providers.find((p) => p.id === selected.provider)!
+          .configured,
         encryptionReady: true,
-        provider: "openai",
-        model: "gpt-4.1-mini",
-        models: ["gpt-4.1-mini"],
+        ...selected,
+        models: providers.find((p) => p.id === selected.provider)!.models,
         tokenWarning: 100000,
         usage: { input: 0, output: 0, cost: null, period: "Test fixture" },
         warning: false,
@@ -48,15 +79,20 @@ test("native streaming transcript, tools, mutation refresh, safe Markdown and co
     })
   ).json();
   await page.goto(`/?workspace=${workspace.id}`);
-  await page.getByRole("tab", { name: "Chat", exact: true }).click();
+  await showChat(page);
+  await newConversation(page);
   await page
-    .locator(".conversation-list > .row")
-    .getByRole("button", { name: "New conversation", exact: true })
-    .click();
+    .getByLabel("AI model", { exact: true })
+    .selectOption("google:gemini-2.5-flash");
+  let releaseResponse!: () => void;
+  const responseGate = new Promise<void>((resolve) => {
+    releaseResponse = resolve;
+  });
   let count = 0;
   await page.route("**/api/agent", async (route) => {
     count++;
     const body = route.request().postDataJSON();
+    const snapshot = { ...selected };
     const start = await admin.rpc("start_agent_turn", {
       actor,
       turn: body.turnId,
@@ -64,8 +100,8 @@ test("native streaming transcript, tools, mutation refresh, safe Markdown and co
       conversation: body.conversationId,
       request_hash: "ui-fixture",
       user_text: body.text,
-      model_provider: "test-fixture",
-      model_id: "mock",
+      model_provider: snapshot.provider,
+      model_id: snapshot.model,
     });
     expect(start.error).toBeNull();
     const collection = await page.request.post(
@@ -151,6 +187,43 @@ test("native streaming transcript, tools, mutation refresh, safe Markdown and co
         })
       ).error,
     ).toBeNull();
+    const surface = await page.request.put(
+      `/api/workspaces/${workspace.id}/interface`,
+      {
+        headers: { Origin: origin },
+        data: {
+          revision: workspace.revision,
+          definition: {
+            messages: [
+              {
+                version: "v0.9.1",
+                createSurface: {
+                  surfaceId: "workspace",
+                  catalogId: "https://paw.local/catalogs/workspace-v1.json",
+                },
+              },
+              {
+                version: "v0.9.1",
+                updateComponents: {
+                  surfaceId: "workspace",
+                  components: [
+                    { id: "root", component: "Column", children: ["title"] },
+                    {
+                      id: "title",
+                      component: "Text",
+                      text: "Agent interface",
+                      variant: "h2",
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        },
+      },
+    );
+    expect(surface.ok()).toBeTruthy();
+    await responseGate;
     const chunks = [
       { type: "start", messageId: body.turnId },
       { type: "text-start", id: "text" },
@@ -189,12 +262,38 @@ test("native streaming transcript, tools, mutation refresh, safe Markdown and co
   ).toBeEnabled();
   await page.getByLabel("Message", { exact: true }).press("Enter");
   await expect(
+    page.getByRole("button", { name: "Stop generation", exact: true }),
+  ).toBeVisible();
+  await page
+    .getByLabel("AI model", { exact: true })
+    .selectOption("groq:llama-3.3-70b-versatile");
+  releaseResponse();
+  await expect(
     page.getByRole("heading", { name: "Workspace updated", exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByText("1 collection · Interface revision 1"),
+    page.getByRole("region", { name: "Live interface", exact: true }),
   ).toBeVisible();
+  await expect(
+    page.getByText("1 collection · Interface revision 1"),
+  ).toHaveCount(0);
   expect(count).toBe(1);
+  await expect(
+    page
+      .locator(".primary-interface")
+      .getByRole("heading", { name: "Agent interface", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole("log")).toContainText("Create notes");
+  const savedTurns = await (
+    await page.request.get(
+      `/api/workspaces/${workspace.id}/conversations/${(await admin.from("agent_turns").select("conversation_id").eq("workspace_id", workspace.id).single()).data!.conversation_id}/turns`,
+    )
+  ).json();
+  expect(savedTurns[0].provider).toBe("google");
+  expect(savedTurns[0].model).toBe("gemini-2.5-flash");
+  await expect(page.getByLabel("AI model", { exact: true })).toHaveValue(
+    "groq:llama-3.3-70b-versatile",
+  );
   await expect(page.locator(".tool-activity summary")).toContainText(
     "completed",
   );
@@ -205,10 +304,55 @@ test("native streaming transcript, tools, mutation refresh, safe Markdown and co
   await expect(
     page.getByRole("button", { name: "Copy code", exact: true }),
   ).toBeVisible();
-  await page
-    .locator(".conversation-list > .row")
-    .getByRole("button", { name: "New conversation", exact: true })
+  await page.getByRole("button", { name: "AI settings", exact: true }).click();
+  const settingsDialog = page.getByRole("dialog", {
+    name: "AI settings",
+    exact: true,
+  });
+  await settingsDialog
+    .getByRole("combobox", { name: "Provider", exact: true })
+    .selectOption("google");
+  await expect(
+    settingsDialog.getByRole("combobox", { name: "Model", exact: true }),
+  ).toHaveValue("gemini-2.5-flash");
+  await settingsDialog
+    .getByLabel("API key", { exact: true })
+    .fill("fixture-replacement-key");
+  await settingsDialog
+    .getByRole("combobox", { name: "Provider", exact: true })
+    .selectOption("groq");
+  await expect(
+    settingsDialog.getByLabel("API key", { exact: true }),
+  ).toHaveValue("");
+  await settingsDialog
+    .getByRole("combobox", { name: "Provider", exact: true })
+    .selectOption("google");
+  await settingsDialog
+    .getByLabel("API key", { exact: true })
+    .fill("fixture-replacement-key");
+  await settingsDialog
+    .getByRole("button", { name: "Validate & save", exact: true })
     .click();
+  await expect(settingsDialog.getByRole("status")).toContainText(
+    "Key validated",
+  );
+  await expect(
+    settingsDialog.getByLabel("API key", { exact: true }),
+  ).toHaveValue("");
+  page.once("dialog", (dialog) => dialog.accept());
+  await settingsDialog
+    .getByRole("button", { name: "Remove key", exact: true })
+    .click();
+  await expect(settingsDialog.getByRole("status")).toContainText(
+    "API key removed",
+  );
+  expect(providers.find((p) => p.id === "groq")!.configured).toBe(true);
+  expect(providers.find((p) => p.id === "openai")!.configured).toBe(true);
+  await settingsDialog
+    .getByRole("button", { name: "Close", exact: true })
+    .click();
+  await expect(page.getByRole("log")).toContainText("Create notes");
+  await newConversation(page);
   await expect(
     page.getByRole("heading", {
       name: "What would you like to create?",
@@ -219,7 +363,7 @@ test("native streaming transcript, tools, mutation refresh, safe Markdown and co
     page.getByRole("heading", { name: "Workspace updated", exact: true }),
   ).toHaveCount(0);
   await page.reload();
-  await page.getByRole("tab", { name: "Chat", exact: true }).click();
+  await showChat(page);
   const conversations = (
     await (
       await page.request.get(`/api/workspaces/${workspace.id}/conversations`)
@@ -229,6 +373,7 @@ test("native streaming transcript, tools, mutation refresh, safe Markdown and co
   const ordered = conversations.sort((a: any, b: any) =>
     a.created_at.localeCompare(b.created_at),
   );
+  await openConversations(page);
   await page
     .getByRole("navigation", { name: "Conversations", exact: true })
     .getByRole("button", { name: "New conversation", exact: true })

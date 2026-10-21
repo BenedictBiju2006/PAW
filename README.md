@@ -1,6 +1,6 @@
 # PAW
 
-Persistent Agentic Workspaces. Milestone 3 adds live OpenAI Responses inference, discovery-driven tool execution, secure per-user credentials, and streaming chat alongside the A2UI v0.9.1 runtime and existing manual tools.
+Persistent Agentic Workspaces. Conversations become software. Milestone 3.1 supports OpenAI, Google Gemini, and Groq through one discovery-driven agent, with streaming Chat beside the persistent A2UI Interface and manual tools under Developer Tools.
 
 ## Run locally
 
@@ -46,13 +46,13 @@ In Supabase **Authentication → Sign In / Providers**, enable Email. Set your S
 ## Create and use an A2UI interface
 
 1. Sign in and create a workspace.
-2. Open **Collections & data**, create a collection, and define its fields. Supported types are string, number, boolean, date, and enum. Collection schemas remain immutable to protect existing records.
+2. Expand **Developer Tools**, open **Collections & data**, create a collection, and define its fields. Supported types are string, number, boolean, date, and enum. Collection schemas remain immutable to protect existing records.
 3. Add or edit records. Exact-match filtering, typed sorting, and bounded pagination remain available. Edits reject stale timestamps; destructive operations require confirmation.
 4. Open **Interface builder**. Use the heading, form/table, and chart shortcuts or author A2UI messages directly. Validation and the preview update immediately.
-5. Save, then open **Workspace** to use the resulting form, table, chart, inputs, and buttons. Changes go to Supabase without an LLM.
+5. Save, then use the primary **Interface** pane to use the resulting form, table, chart, inputs, and buttons. Changes go to Supabase without an LLM.
 6. Reload or sign out and back in. The saved interface and records persist, and the workspace URL reopens the same workspace.
 
-The preview is intentionally **read-only for persistent mutations**: you can exercise transient input bindings and tabs, but forms and table mutations are disabled, and record-creating button events are rejected. Save the interface and use the Workspace tab to change stored records. Unsaved preview state is transient and is not written into the saved definition.
+The preview is intentionally **read-only for persistent mutations**: you can exercise transient input bindings and tabs, but forms and table mutations are disabled, and record-creating button events are rejected. Save the interface and use the primary Interface pane to change stored records. Unsaved preview state is transient and is not written into the saved definition.
 
 ## Official A2UI implementation
 
@@ -213,7 +213,7 @@ Hosted acceptance remains a separate check after applying the forward migration:
 
 ## Milestone 2: discoverable tools and conversations
 
-The manual **Workspace**, **Collections & data**, and **Interface builder** views remain available. **Chat** adds multiple persisted conversations per workspace. Create, rename, switch and delete conversations, and compose multiline messages. Messages are genuinely stored. Milestone 3 adds live AI responses when a provider is configured; no demo responses are generated. The same current workspace data and interface are shared across all conversations.
+The primary **Interface** pane and manual **Collections & data** and **Interface builder** tools remain available (manual tools are under **Developer Tools**). **Chat** adds multiple persisted conversations per workspace. Create, rename, switch and delete conversations, and compose multiline messages. Messages are genuinely stored. Milestone 3 adds live AI responses when a provider is configured; no demo responses are generated. The same current workspace data and interface are shared across all conversations.
 
 ### Migration
 
@@ -291,7 +291,7 @@ PAW now uses the Vercel AI SDK and **OpenAI Responses API** for real server-side
 
 Credentials use AES-256-GCM, a fresh 12-byte nonce, authentication tag, envelope/key-version metadata, and user/provider/version-bound associated data. A credential encrypted for one user cannot be decrypted as another user. Settings responses contain configuration state, model choices, warning preferences and usage, **never ciphertext or the API key**. Ordinary authenticated Supabase clients have no access to `provider_settings`. Encryption/decryption modules are reachable only from server routes, not browser components. Changing the encryption key/version without migrating existing ciphertext requires users to replace their saved keys; a multi-key rotation service is not implemented.
 
-`PAW_OPENAI_MODELS` defaults to the documented Responses-compatible models `gpt-4.1-mini,gpt-4.1`. Administrators may configure a comma-separated list of verified supported model IDs. Saved selections must remain in that list and pass the provider access check. Only OpenAI is shipped; the orchestration tests use a second scripted provider with the same contract.
+`PAW_OPENAI_MODELS` defaults to the documented Responses-compatible models `gpt-4.1-mini,gpt-4.1`. Administrators may configure a comma-separated list of verified supported model IDs. Saved selections must remain in that list and pass the provider access check. Gemini and Groq are also shipped; see Milestone 3.1 below for their server allowlists and account setup.
 
 ### Agent and streaming architecture
 
@@ -342,4 +342,131 @@ PAW_LIVE_OPENAI_SMOKE=1 OPENAI_API_KEY=your-test-key npm run test:live
 # Optional PAW_LIVE_MODEL must identify a model your API account supports.
 ```
 
-After deployment, validate a real user key and exercise the scenarios in your Milestone 3 brief. No live paid call is implied by passing mocked tests. Next steps are production live acceptance, a real user approval flow before agent deletion, durable background execution/reattachment if hosting requires it, and stronger operational usage controls. Additional providers and hosted MCP remain optional future work; they must share this same registry/executor.
+After deployment, validate a real user key and exercise the scenarios in your Milestone 3 brief. No live paid call is implied by passing mocked tests. Next steps are production live acceptance, a real user approval flow before agent deletion, durable background execution/reattachment if hosting requires it, and stronger operational usage controls. Hosted MCP remains optional future work; any further provider must share this same registry/executor.
+
+## Milestone 3.1: providers and the workspace experience
+
+### Upgrade and credential migration
+
+After the four existing migrations, apply **only** the new forward migration
+[`202610220001_multi_provider.sql`](supabase/migrations/202610220001_multi_provider.sql).
+Use SQL Editor once or your normal `supabase db push` workflow. It changes the
+credential primary key to `(user_id, provider)`, copies the existing active OpenAI
+model into `ai_preferences`, and adds turn diagnostics. Existing encrypted keys
+are left byte-for-byte intact. Keep the same `PAW_CREDENTIAL_ENCRYPTION_KEY` and
+`PAW_CREDENTIAL_KEY_VERSION`; OpenAI's existing authenticated data remains
+`paw:openai:<user>:<version>`. New keys bind to their own provider identity. No
+credential re-entry or encryption-key rotation is necessary for this upgrade.
+Both settings tables retain RLS and are inaccessible to anon/authenticated database
+clients; only the server's privileged settings service can access them. Workspace
+tools continue using the user's existing authorization boundary.
+
+The required server variables remain `SUPABASE_SECRET_KEY` (or the legacy
+`SUPABASE_SERVICE_ROLE_KEY`), `PAW_CREDENTIAL_ENCRYPTION_KEY`, and optionally
+`PAW_CREDENTIAL_KEY_VERSION=1`, plus the existing public Supabase URL/publishable
+key and deployment origin. Provider keys are entered by each user in the UI;
+there are no browser environment keys or shared provider credentials.
+
+### Configure providers
+
+Open **AI settings** from the Chat header. Select a provider, enter its API key,
+choose an enabled model, set a soft token warning, and **Validate & save**.
+Select another provider to repeat. All three keys can remain saved simultaneously.
+Blank key entry validates the existing saved key; enter a replacement to replace
+only that provider's credential. **Remove key** removes only the selected provider.
+Saving makes the selected provider/model active. The compact **AI model** selector
+in Chat switches the active preference without altering the conversation. Each
+running turn keeps the provider/model resolved when it started. No automatic
+provider, key, or model fallback occurs, including after key removal.
+
+- **OpenAI:** create an API key at [OpenAI Platform](https://platform.openai.com/api-keys).
+  The direct Responses API remains in use with `store:false`. ChatGPT subscriptions
+  do not include API billing.
+- **Gemini:** obtain an API key from [Google AI Studio](https://aistudio.google.com/apikey).
+  PAW uses `@ai-sdk/google` and the direct Gemini API. See
+  [Gemini setup](https://ai.google.dev/gemini-api/docs/api-key),
+  [usage](https://aistudio.google.com/usage), and
+  [rate limits](https://ai.google.dev/gemini-api/docs/rate-limits).
+- **Groq:** obtain a key from [GroqCloud](https://console.groq.com/keys).
+  PAW uses `@ai-sdk/groq` with the direct GroqCloud API. See
+  [Groq documentation](https://console.groq.com/docs),
+  [usage](https://console.groq.com/usage), and
+  [rate limits](https://console.groq.com/docs/rate-limits).
+
+Free-tier availability and rate limits depend on your provider account. PAW does
+not control provider billing. Key validation retrieves model metadata and makes
+no inference call. Gemini metadata must advertise `generateContent`. Structured
+function support is attested separately by the server-maintained model allowlist;
+metadata validation cannot prove quota, billing eligibility, or successful future
+inference. Provider permission, model availability, quota, rate-limit, network and
+outage failures produce recoverable messages without exposing upstream bodies.
+Explicitly select another provider if you want to switch after a failure.
+
+### Model configuration and shared agent
+
+[`packages/agent/registry.ts`](packages/agent/registry.ts) centralizes provider IDs,
+adapters, display/configuration metadata, models, and metadata validation. Defaults:
+
+| Provider          | Server variable     | Default models                                 |
+| ----------------- | ------------------- | ---------------------------------------------- |
+| OpenAI            | `PAW_OPENAI_MODELS` | `gpt-4.1-mini,gpt-4.1`                         |
+| Gemini (`google`) | `PAW_GOOGLE_MODELS` | `gemini-2.5-flash,gemini-2.5-pro`              |
+| Groq              | `PAW_GROQ_MODELS`   | `llama-3.3-70b-versatile,llama-3.1-8b-instant` |
+
+These are small tool-capable allowlists based on the official
+[Google adapter](https://ai-sdk.dev/providers/ai-sdk-providers/google),
+[Groq adapter](https://ai-sdk.dev/providers/ai-sdk-providers/groq), and
+[Groq model](https://console.groq.com/docs/models) documentation. Availability can
+change; save-time access checks and inference errors identify unavailable models.
+Administrators can replace lists with comma-separated verified tool-capable IDs;
+do not add embedding, image-only, moderation, or other non-function-calling models.
+An unavailable saved model produces a selection error, never a silent substitution.
+The SDK packages are pinned to compatible AI SDK 7 provider-v4 versions.
+
+All providers use the same AgentOrchestrator, discovery-first prompt, schema
+inspection gate, ToolRegistry/ToolExecutor, WorkspaceService, conversation storage,
+A2UI validation, stream event format, limits, idempotency, and cancellation. The SDK
+normalizes provider tool-call streams; Gemini tool-call signatures are retained
+inside the current inference loop. No hosted MCP, AI Gateway, provider-specific
+agent loop, or paid validation request is introduced.
+
+### Chat and Interface
+
+Opening a workspace presents Chat and the actual live A2UI Interface side by side
+on desktop. Conversation navigation opens from a compact **Conversations** button.
+On mobile, **Chat** and **Interface** switch views without unmounting the thread,
+losing drafts, or cancelling a response. The composer supports the viewport and
+safe-area layout. Successful persisted agent mutations refresh the live definition
+and collection-backed components; changes are never shown before validation and
+persistence succeed. Empty interfaces encourage describing an idea in Chat.
+
+**Developer Tools** is collapsed by default. Expand it for Collections & Data,
+collection creation, records, schemas, Interface Builder, JSON editing, the existing
+read-only preview, and revision history. Its non-sensitive local browser preference
+survives navigation. It is a presentation preference, never an authorization rule.
+Existing workspace rename/delete settings, data, interfaces, history, and manual
+backend operations are preserved.
+
+Turns retain their actual provider/model, cumulative input/output tokens, request
+count, tool-call count, cached input tokens when reported, and completion status.
+Chat shows compact diagnostics; cost remains **unknown**. Missing cache usage is
+unknown rather than an assumed zero. Soft token warnings remain advisory and use
+the existing aggregate 30-day token totals; they do not estimate money or cap bills.
+No raw private prompts, API keys, or upstream response bodies appear in diagnostics.
+
+### Verification and limitations
+
+Run `npm run typecheck`, `npm test`, `npm run build`, `npm run test:integration`, and
+`npm run test:browser`. Automated tests use mocked provider HTTP streams and disposable
+local database/auth containers, never paid provider keys. They cover both new SDK
+adapters through the real discovery/execution loop, key validation failures,
+provider/user credential isolation, original OpenAI credential migration,
+provider switching/removal, metadata persistence, streaming/mutation refresh,
+responsive panes, Developer Tools, and the retained manual workflow.
+
+The existing OpenAI live smoke remains separate: `PAW_LIVE_OPENAI_SMOKE=1
+OPENAI_API_KEY=... npm run test:live`. Real Gemini/Groq account acceptance (including
+plan-specific quota and model access) must be exercised manually with user keys;
+mocked tests do not establish live-provider reliability. Deploy the migration and
+server configuration before production acceptance. No hosted database migration
+is performed by committing this code.

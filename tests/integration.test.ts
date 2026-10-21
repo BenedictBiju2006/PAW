@@ -36,6 +36,23 @@ function client(user?: string, role?: string) {
   });
 }
 test(
+  "Milestone 3.1 migration retains legacy OpenAI ciphertext and active preference",
+  { skip: !enabled },
+  async () => {
+    const { ProviderSettingsService } =
+      await import("../packages/agent/settings");
+    const admin = client(undefined, "service_role");
+    const settings = new ProviderSettingsService(admin, b, {
+      PAW_CREDENTIAL_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString("base64"),
+    });
+    const resolved = await settings.resolve();
+    assert.equal(resolved.apiKey, "legacy-openai-fixture");
+    assert.equal(resolved.provider, "openai");
+    assert.equal(resolved.model, "gpt-4.1-mini");
+    await settings.remove();
+  },
+);
+test(
   "Postgres + PostgREST: persistence, scoped services, RLS, validation, and revision transactions",
   { skip: !enabled },
   async (t) => {
@@ -1038,28 +1055,24 @@ test(
         for (const role of ["assistant", "tool", "system"]) {
           assert.ok(
             (
-              await db
-                .from("messages")
-                .insert({
-                  workspace_id: w.id,
-                  conversation_id: c.id,
-                  role,
-                  content: [{ type: "text", text: "Forged message" }],
-                })
+              await db.from("messages").insert({
+                workspace_id: w.id,
+                conversation_id: c.id,
+                role,
+                content: [{ type: "text", text: "Forged message" }],
+              })
             ).error,
           );
         }
         assert.ok(
           (
-            await db
-              .from("messages")
-              .insert({
-                workspace_id: w.id,
-                conversation_id: c.id,
-                role: "user",
-                trusted: true,
-                content: [{ type: "text", text: "Forged trust" }],
-              })
+            await db.from("messages").insert({
+              workspace_id: w.id,
+              conversation_id: c.id,
+              role: "user",
+              trusted: true,
+              content: [{ type: "text", text: "Forged trust" }],
+            })
           ).error,
         );
         assert.ok(
@@ -1471,5 +1484,131 @@ test(
         assert.equal((await settings.status()).configured, false);
       },
     );
+  },
+);
+
+test(
+  "multi-provider settings preserve credentials and history across explicit switches and removals",
+  { skip: !enabled },
+  async () => {
+    const { ProviderSettingsService } =
+      await import("../packages/agent/settings");
+    const { providerModels } = await import("../packages/agent/registry");
+    const admin = client(undefined, "service_role");
+    const env = {
+      PAW_CREDENTIAL_ENCRYPTION_KEY: Buffer.alloc(32, 9).toString("base64"),
+    };
+    const settings = new ProviderSettingsService(admin, b, env, async () =>
+      Response.json({ supportedGenerationMethods: ["generateContent"] }),
+    );
+    for (const provider of ["openai", "google", "groq"] as const)
+      await settings.save({
+        provider,
+        model: providerModels(provider)[0],
+        apiKey: `${provider}-test-only-secret`,
+      });
+    const status = await settings.status();
+    assert.equal(status.providers.filter((p) => p.configured).length, 3);
+    assert.ok(!JSON.stringify(status).includes("secret"));
+    const { AgentStore } = await import("../packages/agent/store");
+    const { AgentOrchestrator } =
+      await import("../packages/agent/orchestrator");
+    const { ConversationService } =
+      await import("../packages/conversations/services");
+    const { createToolRegistry } =
+      await import("../packages/tools/definitions");
+    const { ToolExecutor } = await import("../packages/tools/executor");
+    const { randomUUID } = await import("node:crypto");
+    const service = new WorkspaceService(client(b), b);
+    const workspace = await service.create("Switch providers");
+    const conversations = new ConversationService(client(b), service);
+    const conversation = await conversations.create(
+      workspace.id,
+      "One continuous thread",
+    );
+    const store = new AgentStore(admin, b);
+    const executor = new ToolExecutor(createToolRegistry(), {
+      service,
+      workspaceId: workspace.id,
+      permissions: new Set(["read", "write"]),
+    });
+    for (const provider of ["google", "groq", "openai"] as const) {
+      await settings.select({ provider, model: providerModels(provider)[0] });
+      assert.equal(
+        (await settings.resolve()).apiKey,
+        `${provider}-test-only-secret`,
+      );
+      const selected = await settings.resolve(),
+        turnId = randomUUID();
+      await store.start({
+        id: turnId,
+        workspaceId: workspace.id,
+        conversationId: conversation.id,
+        text: `Hello ${provider}`,
+        ...selected,
+      });
+      const adapter: import("../packages/agent/provider").ModelProvider = {
+        id: provider,
+        capabilities: { streaming: true, tools: true, hostedMcp: false },
+        async *stream() {
+          yield { type: "text", text: `Reply from ${provider}` };
+          yield {
+            type: "usage",
+            input: 10,
+            output: 5,
+            cachedInput: 2,
+            reason: "stop",
+          };
+        },
+      };
+      await new AgentOrchestrator(adapter, executor, store).run(
+        {
+          turnId,
+          workspaceId: workspace.id,
+          conversationId: conversation.id,
+          ...selected,
+          history: [],
+          signal: new AbortController().signal,
+        },
+        () => {},
+      );
+      const turn = await admin
+        .from("agent_turns")
+        .select("*")
+        .eq("id", turnId)
+        .single();
+      assert.equal(turn.data.provider, provider);
+      assert.equal(turn.data.model, selected.model);
+      assert.equal(turn.data.model_requests, 1);
+      assert.equal(turn.data.tool_calls, 0);
+      assert.equal(turn.data.cached_input_tokens, 2);
+    }
+    const history = (await conversations.recent(workspace.id, conversation.id))
+      .messages;
+    for (const provider of ["google", "groq", "openai"]) {
+      assert.ok(
+        history.some(
+          (m) =>
+            m.metadata.provider === provider &&
+            JSON.stringify(m.content).includes(`Reply from ${provider}`),
+        ),
+      );
+    }
+    await settings.remove({ provider: "google" });
+    assert.equal((await settings.resolve()).provider, "openai");
+    await settings.select({
+      provider: "groq",
+      model: providerModels("groq")[0],
+    });
+    await settings.remove({ provider: "groq" });
+    assert.equal((await settings.status()).configured, false);
+    await assert.rejects(() => settings.resolve());
+    assert.equal(
+      (await settings.status()).providers.find((p) => p.id === "openai")
+        ?.configured,
+      true,
+    );
+    assert.ok((await client(b).from("ai_preferences").select("*")).error);
+    assert.ok((await client(a).from("ai_preferences").select("*")).error);
   },
 );

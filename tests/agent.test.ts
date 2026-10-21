@@ -406,3 +406,263 @@ test("OpenAI adapter uses the Responses wire API and normalizes real SDK functio
     globalThis.fetch = original;
   }
 });
+
+test("registry resolves only supported providers and provider-scoped model lists", async () => {
+  const { resolveProvider, providerModels, validateModel } =
+    await import("../packages/agent/registry");
+  for (const id of ["openai", "google", "groq"] as const) {
+    assert.equal(resolveProvider(id).adapter.id, id);
+    assert.ok(providerModels(id).length > 0);
+    assert.throws(() => validateModel(id, "unsupported-image-model"));
+  }
+  assert.throws(() => resolveProvider("gateway"));
+  assert.deepEqual(
+    providerModels("groq", {
+      PAW_GROQ_MODELS: "verified/custom-model,verified/custom-model",
+    }),
+    ["verified/custom-model"],
+  );
+});
+
+test("provider authenticated data preserves legacy OpenAI envelopes and isolates all credentials", () => {
+  const env = {
+    PAW_CREDENTIAL_ENCRYPTION_KEY: randomBytes(32).toString("base64"),
+  };
+  const legacy = encryptCredential("old-openai-key", workspaceId, env);
+  assert.equal(
+    decryptCredential(legacy, workspaceId, env, "openai"),
+    "old-openai-key",
+  );
+  for (const id of ["openai", "google", "groq"]) {
+    const envelope = encryptCredential(`${id}-key`, workspaceId, env, id);
+    assert.equal(
+      decryptCredential(envelope, workspaceId, env, id),
+      `${id}-key`,
+    );
+    for (const other of ["openai", "google", "groq"].filter((p) => p !== id))
+      assert.throws(() => decryptCredential(envelope, workspaceId, env, other));
+  }
+});
+
+test("key validation uses provider metadata APIs, verifies Gemini generation, and redacts failures", async () => {
+  const { validateProviderKey } = await import("../packages/agent/registry");
+  for (const id of ["openai", "google", "groq"] as const) {
+    await validateProviderKey(
+      id,
+      "selected-model",
+      "secret-key",
+      async (url, init) => {
+        assert.ok(!String(url).includes("secret-key"));
+        assert.equal(init?.method, undefined);
+        assert.equal(
+          new Headers(init?.headers).get(
+            id === "google" ? "x-goog-api-key" : "Authorization",
+          ),
+          id === "google" ? "secret-key" : "Bearer secret-key",
+        );
+        return Response.json({
+          supportedGenerationMethods: ["generateContent"],
+        });
+      },
+    );
+    for (const status of [401, 404, 429, 503])
+      await assert.rejects(
+        () =>
+          validateProviderKey(
+            id,
+            "model",
+            "secret-key",
+            async () => new Response("secret-key", { status }),
+          ),
+        (e) => !String(e).includes("secret-key"),
+      );
+    await assert.rejects(
+      () =>
+        validateProviderKey(id, "model", "secret-key", async () => {
+          throw new Error("secret-key");
+        }),
+      /network failure/,
+    );
+  }
+  await assert.rejects(
+    () =>
+      validateProviderKey("google", "model", "key", async () =>
+        Response.json({ supportedGenerationMethods: ["embedContent"] }),
+      ),
+    /does not support/,
+  );
+});
+
+for (const id of ["google", "groq"] as const)
+  test(`${id} real SDK adapter runs discovery and execution through the shared orchestrator`, async () => {
+    const { resolveProvider, providerModels } =
+      await import("../packages/agent/registry");
+    const original = globalThis.fetch;
+    let requestCount = 0;
+    const requests: any[] = [];
+    globalThis.fetch = async (url, init) => {
+      assert.match(
+        String(url),
+        id === "google"
+          ? /generativelanguage.googleapis.com/
+          : /api.groq.com\/openai\/v1\/chat\/completions/,
+      );
+      const body = JSON.parse(String(init?.body));
+      requests.push(body);
+      const step = requestCount++;
+      const name = step === 0 ? "describe_tool" : "invoke_tool";
+      const args =
+        step === 0
+          ? { toolId: "get_catalog" }
+          : { toolId: "get_catalog", arguments: {} };
+      const data =
+        id === "google"
+          ? [
+              {
+                candidates: [
+                  {
+                    index: 0,
+                    content: {
+                      role: "model",
+                      parts:
+                        step < 2
+                          ? [
+                              {
+                                functionCall: { name, args },
+                                thoughtSignature: "fixture-signature",
+                              },
+                            ]
+                          : [{ text: "Catalog ready." }],
+                    },
+                    finishReason: "STOP",
+                  },
+                ],
+                usageMetadata: {
+                  promptTokenCount: 10,
+                  candidatesTokenCount: 5,
+                  totalTokenCount: 15,
+                  cachedContentTokenCount: 2,
+                },
+              },
+            ]
+          : [
+              {
+                id: `fixture-${step}`,
+                object: "chat.completion.chunk",
+                created: 1,
+                model: "mock",
+                choices: [
+                  {
+                    index: 0,
+                    delta:
+                      step < 2
+                        ? {
+                            tool_calls: [
+                              {
+                                index: 0,
+                                id: `call-${step}`,
+                                type: "function",
+                                function: {
+                                  name,
+                                  arguments: JSON.stringify(args),
+                                },
+                              },
+                            ],
+                          }
+                        : { content: "Catalog ready." },
+                    finish_reason: null,
+                  },
+                ],
+              },
+              {
+                id: `fixture-${step}`,
+                object: "chat.completion.chunk",
+                created: 1,
+                model: "mock",
+                choices: [
+                  {
+                    index: 0,
+                    delta: {},
+                    finish_reason: step < 2 ? "tool_calls" : "stop",
+                  },
+                ],
+                x_groq: {
+                  usage: {
+                    prompt_tokens: 10,
+                    completion_tokens: 5,
+                    total_tokens: 15,
+                  },
+                },
+              },
+            ];
+      return new Response(
+        data.map((d) => `data: ${JSON.stringify(d)}\n\n`).join(""),
+        { headers: { "Content-Type": "text/event-stream" } },
+      );
+    };
+    try {
+      const s = setup(resolveProvider(id).adapter),
+        events: any[] = [];
+      await s.agent.run({ ...input, model: providerModels(id)[0] }, (e) =>
+        events.push(e),
+      );
+      assert.equal(s.terminal()[1], "completed", JSON.stringify(s.events));
+      assert.equal(requestCount, 3);
+      assert.equal(s.terminal()[2], 30);
+      assert.ok(
+        events.some(
+          (e) =>
+            e.type === "activity" &&
+            e.activity.toolId === "get_catalog" &&
+            e.activity.status === "completed",
+        ),
+      );
+      assert.ok(JSON.stringify(requests[2]).includes("tool"));
+      if (id === "google")
+        assert.ok(JSON.stringify(requests[1]).includes("fixture-signature"));
+      assert.equal(
+        events
+          .filter((e) => e.type === "text")
+          .map((e) => e.text)
+          .join(""),
+        "Catalog ready.",
+      );
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
+test("provider errors distinguish invalid Gemini keys, unavailable models, quota and outage", () => {
+  assert.match(
+    providerError(
+      {
+        statusCode: 400,
+        responseBody: '{"error":{"details":[{"reason":"API_KEY_INVALID"}]}}',
+      },
+      "Gemini",
+    ),
+    /API credentials/,
+  );
+  assert.match(
+    providerError(
+      {
+        statusCode: 400,
+        responseBody: '{"error":{"code":"model_decommissioned"}}',
+      },
+      "Groq",
+    ),
+    /model unavailable/,
+  );
+  assert.match(
+    providerError(
+      {
+        statusCode: 429,
+        responseBody: '{"error":{"code":"insufficient_quota"}}',
+      },
+      "OpenAI",
+    ),
+    /quota exhausted/,
+  );
+  assert.match(providerError({ statusCode: 429 }, "Groq"), /rate limit/);
+  assert.match(providerError({ statusCode: 503 }, "Gemini"), /outage/);
+});
