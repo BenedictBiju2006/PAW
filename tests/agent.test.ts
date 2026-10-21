@@ -92,7 +92,7 @@ function setup(provider: ModelProvider, limit = agentLimits({})) {
     },
   };
   const agent = new AgentOrchestrator(provider, executor, store, limit);
-  return { agent, events, terminal: () => terminal };
+  return { agent, events, terminal: () => terminal, service };
 }
 const input = {
   turnId,
@@ -528,7 +528,18 @@ for (const id of ["google", "groq"] as const)
                         step < 2
                           ? [
                               {
-                                functionCall: { name, args },
+                                functionCall: {
+                                  name,
+                                  args:
+                                    step === 1
+                                      ? {
+                                          ...args,
+                                          arguments: JSON.stringify(
+                                            args.arguments,
+                                          ),
+                                        }
+                                      : args,
+                                },
                                 thoughtSignature: "fixture-signature",
                               },
                             ]
@@ -811,5 +822,699 @@ test("Google validation and inference errors distinguish restricted projects fro
         ),
       (e) => c.expected.test(String(e)) && !String(e).includes("secret-key"),
     );
+  }
+});
+
+function googleSse(parts: unknown[]) {
+  return new Response(
+    `data: ${JSON.stringify({ candidates: [{ index: 0, content: { role: "model", parts }, finishReason: "STOP" }], usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5, totalTokenCount: 15 } })}\n\n`,
+    { headers: { "Content-Type": "text/event-stream" } },
+  );
+}
+function functionDeclarations(body: any): any[] {
+  return body.tools.flatMap((t: any) => t.functionDeclarations ?? []);
+}
+function assertGoogleDeclaration(value: any) {
+  if (!value || typeof value !== "object") return;
+  for (const [key, child] of Object.entries(value)) {
+    assert.ok(
+      ![
+        "$schema",
+        "$ref",
+        "$defs",
+        "definitions",
+        "propertyNames",
+        "additionalProperties",
+        "anyOf",
+        "oneOf",
+        "allOf",
+        "default",
+      ].includes(key),
+      `unsupported schema keyword: ${key}`,
+    );
+    assertGoogleDeclaration(child);
+  }
+}
+
+test("legacy Google wire reproduces a first-request schema rejection before any tool response", async () => {
+  const { sdkProvider } = await import("../packages/agent/providers/sdk");
+  const { createGoogleGenerativeAI } = await import("@ai-sdk/google");
+  const original = globalThis.fetch;
+  let requests = 0;
+  globalThis.fetch = async (_, init) => {
+    requests++;
+    const body = JSON.parse(String(init?.body));
+    const schema = functionDeclarations(body).find(
+      (t) => t.name === "invoke_tool",
+    ).parametersJsonSchema;
+    assert.deepEqual(
+      body.contents.map((c: any) => c.role),
+      ["user"],
+    );
+    assert.equal(
+      schema.properties.arguments.additionalProperties.$ref,
+      "#/definitions/__schema0",
+    );
+    assert.equal(
+      schema.definitions.__schema0.anyOf.find((s: any) => s.type === "array")
+        .items.$ref,
+      "#/definitions/__schema0",
+    );
+    return Response.json(
+      {
+        error: {
+          status: "INVALID_ARGUMENT",
+          message:
+            "Invalid tool schema for invoke_tool.arguments: recursive $ref definitions are unsupported. private-prompt never-in-context",
+        },
+      },
+      { status: 400 },
+    );
+  };
+  try {
+    // This is the exact pre-fix sdkProvider configuration, without the Google wire adapter.
+    const legacy = sdkProvider("google", (apiKey, model) =>
+      createGoogleGenerativeAI({ apiKey })(model),
+    );
+    const s = setup(legacy);
+    await s.agent.run({ ...input, model: "gemini-3.8-flash" }, () => {});
+    assert.equal(requests, 1);
+    assert.equal(s.terminal()[1], "failed");
+    assert.match(
+      s.terminal()[4],
+      /request 1 \(initial request\).*tool declaration schema.*HTTP 400.*\$ref/,
+    );
+    assert.ok(!JSON.stringify(s.events).includes("private-prompt"));
+    assert.ok(!JSON.stringify(s.events).includes("never-in-context"));
+    assert.ok(!s.events.some((e) => e.role === "tool"));
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+for (const signAll of [false, true])
+  test(`Google parallel multi-step wire preserves original signatures, args, IDs and grouping (all signed: ${signAll})`, async () => {
+    const { googleProvider } =
+      await import("../packages/agent/providers/google");
+    const original = globalThis.fetch;
+    const bodies: any[] = [];
+    const rawArguments =
+      ' { "nested": {"zero":0,"flag":false,"values":[1,null,"x"]} } ';
+    const call = (
+      id: string,
+      name: string,
+      args: unknown,
+      signature?: string,
+    ) => ({
+      functionCall: { id, name, args },
+      ...(signature ? { thoughtSignature: signature } : {}),
+    });
+    globalThis.fetch = async (_, init) => {
+      const body = JSON.parse(String(init?.body));
+      bodies.push(body);
+      for (const tool of functionDeclarations(body))
+        assertGoogleDeclaration(tool.parametersJsonSchema);
+      const dispatchSchema = functionDeclarations(body).find(
+        (t) => t.name === "invoke_tool",
+      ).parametersJsonSchema;
+      assert.equal(dispatchSchema.properties.arguments.type, "string");
+      assert.ok(
+        !JSON.stringify(body).includes("skip_thought_signature_validator"),
+      );
+      if (bodies.length === 1)
+        return googleSse([
+          { text: "Inspecting schemas." },
+          call(
+            "describe-a",
+            "describe_tool",
+            { toolId: "get_catalog" },
+            "returned-signature-a",
+          ),
+          call(
+            "describe-b",
+            "describe_tool",
+            { toolId: "query_records" },
+            signAll ? "returned-signature-b" : undefined,
+          ),
+        ]);
+      if (bodies.length === 2)
+        return googleSse([
+          call(
+            "invoke-a",
+            "invoke_tool",
+            { toolId: "get_catalog", arguments: " {}\n" },
+            "returned-signature-c",
+          ),
+          call(
+            "invoke-b",
+            "invoke_tool",
+            { toolId: "query_records", arguments: rawArguments },
+            signAll ? "returned-signature-d" : undefined,
+          ),
+          call(
+            "search-c",
+            "search_tools",
+            { query: "catalog" },
+            signAll ? "returned-signature-e" : undefined,
+          ),
+        ]);
+      return googleSse([{ text: "Finished safely." }]);
+    };
+    try {
+      const s = setup(googleProvider),
+        activity: any[] = [];
+      await s.agent.run({ ...input, model: "gemini-3.8-flash" }, (event) =>
+        activity.push(event),
+      );
+      assert.equal(s.terminal()[1], "completed", JSON.stringify(s.events));
+      assert.equal(bodies.length, 3);
+      assert.equal(s.terminal()[2], 30);
+      const second = bodies[1].contents;
+      assert.deepEqual(
+        second.map((c: any) => c.role),
+        ["user", "model", "user"],
+      );
+      assert.equal(second[1].parts[0].text, "Inspecting schemas.");
+      const signed = second[1].parts.filter((p: any) => p.functionCall);
+      assert.deepEqual(
+        signed.map((p: any) => p.functionCall.id),
+        ["describe-a", "describe-b"],
+      );
+      assert.equal(signed[0].thoughtSignature, "returned-signature-a");
+      assert.equal(
+        signed[1].thoughtSignature,
+        signAll ? "returned-signature-b" : undefined,
+      );
+      assert.deepEqual(
+        second[2].parts.map((p: any) => p.functionResponse.id),
+        ["describe-a", "describe-b"],
+      );
+      const third = bodies[2].contents;
+      assert.deepEqual(
+        third.map((c: any) => c.role),
+        ["user", "model", "user", "model", "user"],
+      );
+      assert.deepEqual(
+        third[3].parts.map((p: any) => p.functionCall.id),
+        ["invoke-a", "invoke-b", "search-c"],
+      );
+      assert.equal(third[3].parts[0].functionCall.args.arguments, " {}\n");
+      assert.equal(third[3].parts[1].functionCall.args.arguments, rawArguments);
+      assert.deepEqual(third[3].parts[2].functionCall.args, {
+        query: "catalog",
+      }); // no injected Zod default
+      assert.equal(third[3].parts[0].thoughtSignature, "returned-signature-c");
+      assert.equal(
+        third[3].parts[1].thoughtSignature,
+        signAll ? "returned-signature-d" : undefined,
+      );
+      assert.deepEqual(
+        third[4].parts.map((p: any) => p.functionResponse.id),
+        ["invoke-a", "invoke-b", "search-c"],
+      );
+      assert.ok(!JSON.stringify(bodies).includes("pawGoogle"));
+      assert.ok(
+        activity.some(
+          (e) =>
+            e.type === "activity" &&
+            e.activity.toolId === "get_catalog" &&
+            e.activity.status === "completed",
+        ),
+      );
+      // An object satisfying the wire envelope but violating the real tool schema is still rejected.
+      assert.ok(
+        activity.some(
+          (e) =>
+            e.type === "activity" &&
+            e.activity.toolId === "query_records" &&
+            e.activity.status === "failed",
+        ),
+      );
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
+test("Google wire simplification cannot bypass dispatch, strict bootstrap validation, or mutation validation", async () => {
+  const { googleProvider } = await import("../packages/agent/providers/google");
+  const original = globalThis.fetch;
+  let step = 0,
+    created = 0;
+  const bodies: any[] = [];
+  globalThis.fetch = async (_, init) => {
+    const body = JSON.parse(String(init?.body));
+    bodies.push(body);
+    const parts =
+      step++ === 0
+        ? [
+            {
+              functionCall: {
+                id: "describe",
+                name: "describe_tool",
+                args: { toolId: "create_collection" },
+              },
+              thoughtSignature: "real-fixture-a",
+            },
+          ]
+        : step === 2
+          ? [
+              {
+                functionCall: {
+                  id: "bad-json",
+                  name: "invoke_tool",
+                  args: { toolId: "create_collection", arguments: "{" },
+                },
+                thoughtSignature: "real-fixture-b",
+              },
+              {
+                functionCall: {
+                  id: "not-object",
+                  name: "invoke_tool",
+                  args: { toolId: "create_collection", arguments: "[]" },
+                },
+              },
+              {
+                functionCall: {
+                  id: "wrong-tool-input",
+                  name: "invoke_tool",
+                  args: {
+                    toolId: "create_collection",
+                    arguments: JSON.stringify({
+                      workspaceId,
+                      name: "Bad",
+                      fields: "not an array",
+                      unexpected: true,
+                    }),
+                  },
+                },
+              },
+              {
+                functionCall: {
+                  id: "strict-bootstrap",
+                  name: "describe_tool",
+                  args: { toolId: "get_catalog", unexpected: true },
+                },
+              },
+            ]
+          : [{ text: "Validation failures preserved." }];
+    return googleSse(parts);
+  };
+  try {
+    const s = setup(googleProvider);
+    s.service.createCollection = async () => {
+      created++;
+      return {};
+    };
+    await s.agent.run({ ...input, model: "gemini-3.8-flash" }, () => {});
+    assert.equal(s.terminal()[1], "completed");
+    assert.equal(created, 0);
+    const failures = s.events.filter(
+      (e) => e.role === "tool" && e.content[0].result.ok === false,
+    );
+    assert.equal(failures.length, 4);
+    assert.ok(
+      failures.every(
+        (e) => e.content[0].result.error.code === "invalid_arguments",
+      ),
+    );
+    assert.equal(
+      bodies[2].contents[3].parts[0].functionCall.args.arguments,
+      "{",
+    );
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+for (const status of [400, 422])
+  test(`Google HTTP ${status} identifies rejection after tool results and never exposes private upstream text`, async () => {
+    const { googleProvider } =
+      await import("../packages/agent/providers/google");
+    const original = globalThis.fetch;
+    let requests = 0;
+    globalThis.fetch = async () =>
+      ++requests === 1
+        ? googleSse([
+            {
+              functionCall: {
+                id: "call",
+                name: "describe_tool",
+                args: { toolId: "get_catalog" },
+              },
+              thoughtSignature: "provider-signature",
+            },
+          ])
+        : Response.json(
+            {
+              error: {
+                status: "INVALID_ARGUMENT",
+                message:
+                  "functionCall is missing a thought_signature. private prompt sk-should-never-appear",
+              },
+            },
+            { status },
+          );
+    try {
+      const s = setup(googleProvider);
+      await s.agent.run({ ...input, model: "gemini-3.8-flash" }, () => {});
+      assert.equal(requests, 2);
+      assert.equal(s.terminal()[1], "failed");
+      assert.match(
+        s.terminal()[4],
+        new RegExp(
+          `request 2 \\(after tool results\\).*thought signature.*HTTP ${status}`,
+        ),
+      );
+      assert.ok(!JSON.stringify(s.events).includes("private prompt"));
+      assert.ok(!JSON.stringify(s.events).includes("sk-should-never-appear"));
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
+test("Google missing signatures fail before replay instead of activating the SDK dummy-signature fallback", async () => {
+  const { googleProvider } = await import("../packages/agent/providers/google");
+  const original = globalThis.fetch;
+  let requests = 0;
+  globalThis.fetch = async () => {
+    requests++;
+    return googleSse([
+      {
+        functionCall: {
+          id: "unsigned",
+          name: "describe_tool",
+          args: { toolId: "get_catalog" },
+        },
+      },
+    ]);
+  };
+  try {
+    const s = setup(googleProvider);
+    await s.agent.run({ ...input, model: "gemini-3.8-flash" }, () => {});
+    assert.equal(requests, 1);
+    assert.equal(s.terminal()[1], "failed");
+    assert.match(
+      s.terminal()[4],
+      /request 2 \(after tool results\).*original thought signature.*No replay request was sent/,
+    );
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("Google JSON-string dispatch executes a valid nested mutation through the original ToolExecutor", async () => {
+  const { googleProvider } = await import("../packages/agent/providers/google");
+  const original = globalThis.fetch;
+  const args = {
+    workspaceId,
+    collectionId: conversationId,
+    data: {
+      count: 0,
+      enabled: false,
+      nested: { values: [null, "text", { rating: 4 }] },
+    },
+  };
+  const wireArguments = `\n${JSON.stringify(args, null, 2)}\n`;
+  let step = 0,
+    received: unknown,
+    mutations = 0;
+  globalThis.fetch = async (_, init) => {
+    const body = JSON.parse(String(init?.body));
+    if (step++ === 0)
+      return googleSse([
+        {
+          functionCall: {
+            id: "describe-record",
+            name: "describe_tool",
+            args: { toolId: "create_record" },
+          },
+          thoughtSignature: "describe-record-signature",
+        },
+      ]);
+    if (step === 2)
+      return googleSse([
+        {
+          functionCall: {
+            id: "create-record",
+            name: "invoke_tool",
+            args: { toolId: "create_record", arguments: wireArguments },
+          },
+          thoughtSignature: "create-record-signature",
+        },
+      ]);
+    const replay = body.contents[3].parts[0];
+    assert.equal(replay.thoughtSignature, "create-record-signature");
+    assert.equal(replay.functionCall.args.arguments, wireArguments);
+    assert.equal(
+      body.contents[4].parts[0].functionResponse.id,
+      "create-record",
+    );
+    return googleSse([{ text: "Record saved." }]);
+  };
+  try {
+    const s = setup(googleProvider);
+    s.service.writeRecord = async (w: string, c: string, data: unknown) => {
+      assert.equal(w, workspaceId);
+      assert.equal(c, conversationId);
+      received = data;
+      return { id: turnId, data };
+    };
+    await s.agent.run({ ...input, model: "gemini-3.8-flash" }, (e) => {
+      if (e.type === "mutation") mutations++;
+    });
+    assert.equal(s.terminal()[1], "completed");
+    assert.deepEqual(received, args.data);
+    assert.equal(mutations, 1);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("Google schema diagnostics retain safe protocol paths without exposing upstream private values", () => {
+  const error = {
+    statusCode: 422,
+    responseBody: JSON.stringify({
+      error: {
+        message:
+          "Unknown field '$ref' at tools[0].function_declarations[4].parameters_json_schema: private-prompt and sk-private-secret",
+        details: [
+          {
+            fieldViolations: [
+              {
+                field:
+                  "tools[0].function_declarations[4].parameters_json_schema",
+                description:
+                  "Invalid additionalProperties with recursive definitions",
+              },
+            ],
+          },
+        ],
+      },
+    }),
+  };
+  const notice = providerError(error, "google", {
+    request: 1,
+    phase: "initial",
+  });
+  assert.match(notice, /initial request.*tool declaration schema.*HTTP 422/);
+  assert.ok(
+    notice.includes("tools[0].function_declarations[4].parameters_json_schema"),
+  );
+  assert.ok(notice.includes("$ref"));
+  assert.ok(!notice.includes("private-prompt"));
+  assert.ok(!notice.includes("sk-private-secret"));
+  assert.match(
+    providerError(
+      {
+        statusCode: 400,
+        responseBody:
+          '{"error":{"message":"functionResponse count does not match functionCall count"}}',
+      },
+      "google",
+    ),
+    /ordering or pairing/,
+  );
+});
+
+test("Google retains a real signature arriving on a later partialArgs chunk", async () => {
+  const { googleProvider } = await import("../packages/agent/providers/google");
+  const original = globalThis.fetch;
+  let requests = 0;
+  globalThis.fetch = async (_, init) => {
+    const body = JSON.parse(String(init?.body));
+    if (++requests > 1) {
+      const replay = body.contents[1].parts[0];
+      assert.equal(replay.functionCall.id, "streamed-call");
+      assert.deepEqual(replay.functionCall.args, { toolId: "get_catalog" });
+      assert.equal(replay.thoughtSignature, "signature-from-later-delta");
+      assert.ok(
+        !JSON.stringify(body).includes("skip_thought_signature_validator"),
+      );
+      return googleSse([{ text: "Streamed tool complete." }]);
+    }
+    const chunks = [
+      {
+        candidates: [
+          {
+            index: 0,
+            content: {
+              role: "model",
+              parts: [
+                {
+                  functionCall: {
+                    id: "streamed-call",
+                    name: "describe_tool",
+                    partialArgs: [
+                      {
+                        jsonPath: "$.toolId",
+                        stringValue: "get_",
+                        willContinue: true,
+                      },
+                    ],
+                    willContinue: true,
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+      {
+        candidates: [
+          {
+            index: 0,
+            content: {
+              role: "model",
+              parts: [
+                {
+                  functionCall: {
+                    partialArgs: [
+                      {
+                        jsonPath: "$.toolId",
+                        stringValue: "catalog",
+                        willContinue: false,
+                      },
+                    ],
+                    willContinue: false,
+                  },
+                  thoughtSignature: "signature-from-later-delta",
+                },
+              ],
+            },
+            finishReason: "STOP",
+          },
+        ],
+      },
+    ];
+    return new Response(
+      chunks.map((c) => `data: ${JSON.stringify(c)}\n\n`).join(""),
+      { headers: { "Content-Type": "text/event-stream" } },
+    );
+  };
+  try {
+    const s = setup(googleProvider);
+    await s.agent.run({ ...input, model: "gemini-3.8-flash" }, () => {});
+    assert.equal(s.terminal()[1], "completed", s.terminal()[4]);
+    assert.equal(requests, 2);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("pre-fix Google partialArgs replay loses the real signature and reproduces rejection on request two", async () => {
+  const { sdkProvider } = await import("../packages/agent/providers/sdk");
+  const { createGoogleGenerativeAI } = await import("@ai-sdk/google");
+  const original = globalThis.fetch;
+  let requests = 0,
+    replaySignature: unknown;
+  globalThis.fetch = async (_, init) => {
+    const body = JSON.parse(String(init?.body));
+    if (++requests === 2) {
+      replaySignature = body.contents[1].parts[0].thoughtSignature;
+      return Response.json(
+        {
+          error: {
+            status: "INVALID_ARGUMENT",
+            message: "Function call has an invalid thought_signature",
+          },
+        },
+        { status: 400 },
+      );
+    }
+    const chunks = [
+      {
+        candidates: [
+          {
+            index: 0,
+            content: {
+              role: "model",
+              parts: [
+                {
+                  functionCall: {
+                    id: "legacy-partial",
+                    name: "describe_tool",
+                    partialArgs: [
+                      {
+                        jsonPath: "$.toolId",
+                        stringValue: "get_",
+                        willContinue: true,
+                      },
+                    ],
+                    willContinue: true,
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+      {
+        candidates: [
+          {
+            index: 0,
+            content: {
+              role: "model",
+              parts: [
+                {
+                  functionCall: {
+                    partialArgs: [
+                      {
+                        jsonPath: "$.toolId",
+                        stringValue: "catalog",
+                        willContinue: false,
+                      },
+                    ],
+                    willContinue: false,
+                  },
+                  thoughtSignature: "returned-late-signature",
+                },
+              ],
+            },
+            finishReason: "STOP",
+          },
+        ],
+      },
+    ];
+    return new Response(
+      chunks.map((c) => `data: ${JSON.stringify(c)}\n\n`).join(""),
+      { headers: { "Content-Type": "text/event-stream" } },
+    );
+  };
+  try {
+    const legacy = sdkProvider("google", (apiKey, model) =>
+      createGoogleGenerativeAI({ apiKey })(model),
+    );
+    const s = setup(legacy);
+    await s.agent.run({ ...input, model: "gemini-3.8-flash" }, () => {});
+    assert.equal(requests, 2);
+    assert.notEqual(replaySignature, "returned-late-signature");
+    assert.equal(replaySignature, "skip_thought_signature_validator");
+    assert.equal(s.terminal()[1], "failed");
+    assert.match(
+      s.terminal()[4],
+      /request 2 \(after tool results\).*thought signature.*HTTP 400/,
+    );
+  } finally {
+    globalThis.fetch = original;
   }
 });

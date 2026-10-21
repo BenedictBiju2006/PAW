@@ -79,6 +79,7 @@ export class AgentOrchestrator {
         "Invoke a discovered capability after describe_tool has returned its schema in this turn. Permissions and confirmation remain enforced by PAW.",
       inputSchema: dispatch,
     });
+    let requestingModel = false;
     let requests = 0,
       cached: number | null = null;
     let calls = 0,
@@ -125,6 +126,7 @@ export class AgentOrchestrator {
           finishReason = "stop";
         fragmentId = `text-${step}`;
         requests++;
+        requestingModel = true;
         for await (const event of this.provider.stream({
           model: input.model,
           apiKey: input.apiKey,
@@ -159,6 +161,7 @@ export class AgentOrchestrator {
             finishReason = event.reason;
           }
         }
+        requestingModel = false;
         await flush();
         if (tokensOut >= this.limits.outputTokens || finishReason === "length")
           throw new LimitError(
@@ -341,7 +344,16 @@ export class AgentOrchestrator {
       notice =
         error instanceof LimitError
           ? error.message
-          : providerError(error, this.provider.id);
+          : providerError(
+              error,
+              this.provider.id,
+              requestingModel
+                ? {
+                    request: requests,
+                    phase: requests === 1 ? "initial" : "after_tool_results",
+                  }
+                : undefined,
+            );
     } finally {
       try {
         await flush();
