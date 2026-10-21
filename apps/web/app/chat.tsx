@@ -21,6 +21,12 @@ export default function Chat({
   refresh: () => void;
 }) {
   const base = `workspaces/${workspaceId}/conversations`;
+  const navigationToggle = useRef<HTMLButtonElement>(null);
+  const navigationPanel = useRef<HTMLElement>(null);
+  function closeDrawer() {
+    setDrawer(false);
+    navigationToggle.current?.focus();
+  }
   const [conversations, setConversations] = useState<Conversation[]>([]),
     [next, setNext] = useState<number | null>(null),
     [active, setActive] = useState<Conversation | null>(null);
@@ -29,6 +35,12 @@ export default function Chat({
     [settings, setSettings] = useState(false),
     [status, setStatus] = useState<AIStatus | null>(null),
     [drawer, setDrawer] = useState(false);
+  useEffect(() => {
+    if (drawer)
+      navigationPanel.current
+        ?.querySelector<HTMLButtonElement>("button")
+        ?.focus();
+  }, [drawer]);
   useEffect(() => {
     let current = true;
     api<{ conversations: Conversation[]; nextOffset: number | null }>(base)
@@ -59,10 +71,36 @@ export default function Chat({
     }
   }
   return (
-    <section className="chat" aria-label="Workspace chat">
-      <aside className={`conversation-list ${drawer ? "drawer-open" : ""}`}>
+    <section
+      className="chat"
+      aria-label="Workspace chat"
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && drawer) {
+          event.preventDefault();
+          closeDrawer();
+        }
+      }}
+    >
+      {drawer && (
+        <button
+          className="conversation-backdrop"
+          tabIndex={-1}
+          aria-label="Dismiss conversations"
+          onClick={closeDrawer}
+        />
+      )}
+      <aside
+        ref={navigationPanel}
+        hidden={!drawer}
+        id="conversation-navigation"
+        className="conversation-list"
+        aria-label="Conversation navigation"
+      >
         <div className="row">
           <h2>Conversations</h2>
+          <button className="conversation-close" onClick={closeDrawer}>
+            Close conversations
+          </button>
           <button
             disabled={busy}
             onClick={() =>
@@ -85,6 +123,7 @@ export default function Chat({
               key={c.id}
               disabled={busy}
               className={`nav-item ${active?.id === c.id ? "selected" : ""}`}
+              aria-current={active?.id === c.id ? "page" : undefined}
               onClick={() => {
                 setActive(c);
                 setDrawer(false);
@@ -121,12 +160,14 @@ export default function Chat({
         <div className="chat-heading">
           <button
             className="chat-nav-toggle"
+            ref={navigationToggle}
+            aria-controls="conversation-navigation"
             aria-expanded={drawer}
             onClick={() => setDrawer(!drawer)}
           >
             Conversations
           </button>
-          <div>
+          <div className="chat-model">
             <h2>{active?.title ?? "Chat"}</h2>
             {status && (
               <select
@@ -177,7 +218,7 @@ export default function Chat({
             <button onClick={() => setSettings(true)}>AI settings</button>
             {active && (
               <details className="conversation-actions">
-                <summary>Conversation actions</summary>
+                <summary aria-label="Conversation actions">Actions</summary>
                 <button
                   disabled={busy}
                   onClick={() => {
@@ -542,31 +583,31 @@ function ChatThread({
               {status === "submitted" ? "Starting response…" : "Responding…"}
             </p>
           )}
-        </div>
-      )}
-      {!running && turns[0] && (
-        <p className="muted turn-status">
-          {turns[0].provider} / {turns[0].model} · {turns[0].status} ·{" "}
-          {turns[0].input_tokens} input / {turns[0].output_tokens} output tokens
-          · {turns[0].model_requests} model requests · {turns[0].tool_calls}{" "}
-          tool calls · cached input {turns[0].cached_input_tokens ?? "unknown"}{" "}
-          · cost unknown
-          {turns[0].notice ? ` · ${turns[0].notice}` : ""}
-          {turns[0].status === "running" && (
-            <button
-              onClick={async () => {
-                await api("agent/cancel", "POST", {
-                  turnId: turns[0].id,
-                  workspaceId,
-                  conversationId,
-                });
-                await load();
-              }}
-            >
-              Stop active response
-            </button>
+          {!running && turns[0] && (
+            <p className="muted turn-status">
+              {turns[0].provider} / {turns[0].model} · {turns[0].status} ·{" "}
+              {turns[0].input_tokens} input / {turns[0].output_tokens} output
+              tokens · {turns[0].model_requests} model requests ·{" "}
+              {turns[0].tool_calls} tool calls · cached input{" "}
+              {turns[0].cached_input_tokens ?? "unknown"} · cost unknown
+              {turns[0].notice ? ` · ${turns[0].notice}` : ""}
+              {turns[0].status === "running" && (
+                <button
+                  onClick={async () => {
+                    await api("agent/cancel", "POST", {
+                      turnId: turns[0].id,
+                      workspaceId,
+                      conversationId,
+                    });
+                    await load();
+                  }}
+                >
+                  Stop active response
+                </button>
+              )}
+            </p>
           )}
-        </p>
+        </div>
       )}
       <form
         className="chat-composer"

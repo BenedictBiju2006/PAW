@@ -18,7 +18,7 @@ const definitions = {
     name: "Gemini",
     adapter: googleProvider,
     variable: "PAW_GOOGLE_MODELS",
-    defaults: ["gemini-2.5-flash", "gemini-2.5-pro"],
+    defaults: ["gemini-3.8-flash", "gemini-3.5-flash-lite"],
     dashboard: "https://aistudio.google.com/usage",
   },
   groq: {
@@ -35,22 +35,34 @@ export function resolveProvider(id: unknown) {
 export function providerModels(
   id: ProviderId,
   env: NodeJS.ProcessEnv = process.env,
+  savedModel?: string,
 ) {
   const p = definitions[id];
+  // Existing projects may still use 2.5. Never rewrite their selection or
+  // override an administrator's explicit allowlist on upgrade.
+  const legacy =
+    id === "google" &&
+    env[p.variable] === undefined &&
+    ["gemini-2.5-flash", "gemini-2.5-pro"].includes(savedModel ?? "")
+      ? [savedModel!]
+      : [];
   return [
     ...new Set(
-      (env[p.variable] ?? p.defaults.join(","))
+      (env[p.variable] ?? [...p.defaults, ...legacy].join(","))
         .split(",")
         .map((s) => s.trim())
         .filter((s) => /^[a-zA-Z0-9/._-]{1,100}$/.test(s)),
     ),
   ].slice(0, 20);
 }
-export function providerCatalog(env: NodeJS.ProcessEnv = process.env) {
+export function providerCatalog(
+  env: NodeJS.ProcessEnv = process.env,
+  saved: Partial<Record<ProviderId, string>> = {},
+) {
   return providerId.options.map((id) => ({
     id,
     name: definitions[id].name,
-    models: providerModels(id, env),
+    models: providerModels(id, env, saved[id]),
     dashboard: definitions[id].dashboard,
   }));
 }
@@ -58,8 +70,13 @@ export function validateModel(
   id: ProviderId,
   model: string,
   env: NodeJS.ProcessEnv = process.env,
+  savedModel?: string,
 ) {
-  if (!providerModels(id, env).includes(model))
+  if (id === "google" && /gemma|embedding|image|tts|live|robotics/i.test(model))
+    throw new ServiceError(
+      "This Gemini model does not support PAW's structured tool calling. Choose a tool-capable Gemini model.",
+    );
+  if (!providerModels(id, env, savedModel).includes(model))
     throw new ServiceError(
       "Model unavailable or not enabled for structured tool calling. Choose another model in AI settings.",
     );
@@ -94,24 +111,14 @@ export async function validateProviderKey(
   }
   if (!response.ok) {
     const status = response.status;
-    // Inspect machine-readable codes only; never expose upstream error text.
+    // Classification may inspect the provider's diagnostic, but never echo it:
+    // errors can include key material or other private request data.
     const failure = await response.json().catch(() => null);
-    const errorCode =
-      typeof failure?.error?.code === "string" ? failure.error.code : "";
-    const reasons = Array.isArray(failure?.error?.details)
-      ? failure.error.details
-          .map((detail: { reason?: unknown }) =>
-            typeof detail?.reason === "string" ? detail.reason : "",
-          )
-          .join(" ")
-      : "";
-    const errorType =
-      typeof failure?.error?.type === "string" ? failure.error.type : "";
     throw new ServiceError(
       providerError(
         {
           statusCode: status,
-          responseBody: `${errorCode} ${errorType} ${reasons}`,
+          responseBody: JSON.stringify(failure),
         },
         definitions[id].name,
       ),
@@ -119,15 +126,25 @@ export async function validateProviderKey(
     );
   }
   if (id === "google") {
-    let metadata: { supportedGenerationMethods?: string[] };
+    let metadata: { supportedGenerationMethods?: string[] } | null;
     try {
       metadata = await response.json();
     } catch {
       throw new ServiceError("Gemini returned invalid model metadata.", 502);
     }
-    if (!metadata.supportedGenerationMethods?.includes("generateContent"))
+    if (
+      !metadata ||
+      !Array.isArray(metadata.supportedGenerationMethods) ||
+      !metadata.supportedGenerationMethods.includes("generateContent")
+    )
       throw new ServiceError(
-        "This Gemini model does not support content generation required for PAW tools.",
+        "This Gemini model does not support content generation and structured tool calling required by PAW. Choose another model.",
       );
   } else await response.body?.cancel();
+  return {
+    level: "metadata" as const,
+    inferenceVerified: false as const,
+    notice:
+      "Model metadata checked; inference and project access have not been tested. No inference request was made. Your next message may incur provider charges.",
+  };
 }

@@ -268,9 +268,11 @@ export function DataView({
               {records.map((r) => (
                 <tr key={r.id}>
                   {collection.fields.map((f) => (
-                    <td key={f.key}>{display(r.data[f.key])}</td>
+                    <td key={f.key} data-label={f.label}>
+                      {display(r.data[f.key])}
+                    </td>
                   ))}
-                  <td>
+                  <td data-label="Actions">
                     <div className="row">
                       <button disabled={readOnly} onClick={() => setEditing(r)}>
                         Edit

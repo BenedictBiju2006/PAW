@@ -25,11 +25,26 @@ export default function Dashboard({ configured }: { configured: boolean }) {
     "workspace",
   );
   const [developer, setDeveloper] = useState(false);
+  const [interfaceExpanded, setInterfaceExpanded] = useState(false);
   const [primaryView, setPrimaryView] = useState<"chat" | "interface">("chat");
   useEffect(() => {
     try {
       setDeveloper(localStorage.getItem("paw.developerTools") === "true");
     } catch {}
+  }, []);
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    const resize = () =>
+      document.documentElement.style.setProperty(
+        "--workspace-height",
+        `${viewport?.height ?? window.innerHeight}px`,
+      );
+    resize();
+    viewport?.addEventListener("resize", resize);
+    return () => {
+      viewport?.removeEventListener("resize", resize);
+      document.documentElement.style.removeProperty("--workspace-height");
+    };
   }, []);
   const [epoch, setEpoch] = useState(0);
   const [selectedCollection, setSelectedCollection] = useState("");
@@ -226,7 +241,7 @@ export default function Dashboard({ configured }: { configured: boolean }) {
     (c) => c.id === selectedCollection,
   );
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${active ? "workspace-open" : ""}`}>
       <aside className="sidebar">
         <Brand />
         <div className="sidebar-label">YOUR SPACE</div>
@@ -286,7 +301,7 @@ export default function Dashboard({ configured }: { configured: boolean }) {
             Sign out
           </button>
         </header>
-        <main className="content">
+        <main className={`content ${active ? "workspace-content" : ""}`}>
           {error && (
             <div className="error" role="alert">
               {error}
@@ -391,19 +406,34 @@ export default function Dashboard({ configured }: { configured: boolean }) {
                 aria-label="Primary view"
               >
                 <button
-                  aria-pressed={primaryView === "chat"}
-                  onClick={() => setPrimaryView("chat")}
+                  aria-pressed={
+                    !developer && !interfaceExpanded && primaryView === "chat"
+                  }
+                  onClick={() => {
+                    setPrimaryView("chat");
+                    setInterfaceExpanded(false);
+                    setDeveloper(false);
+                  }}
                 >
                   Chat
                 </button>
                 <button
-                  aria-pressed={primaryView === "interface"}
-                  onClick={() => setPrimaryView("interface")}
+                  aria-pressed={
+                    !developer &&
+                    (interfaceExpanded || primaryView === "interface")
+                  }
+                  onClick={() => {
+                    setPrimaryView("interface");
+                    setDeveloper(false);
+                  }}
                 >
                   Interface
                 </button>
               </div>
-              <div className={`workspace-panes showing-${primaryView}`}>
+              <div
+                hidden={developer}
+                className={`workspace-panes showing-${primaryView} ${interfaceExpanded ? "interface-expanded" : ""}`}
+              >
                 <div className="primary-chat">
                   <Chat
                     key={active.id}
@@ -433,30 +463,50 @@ export default function Dashboard({ configured }: { configured: boolean }) {
                   className="primary-interface"
                   aria-label="Live interface"
                 >
-                  <h2>Interface</h2>
-                  {active.interfaceError ? (
-                    <div className="error" role="alert">
-                      {active.interfaceError} Open Interface Builder to recover
-                      the original definition.
-                    </div>
-                  ) : !isEmptyInterface(active.interface) ? (
-                    <InterfaceRenderer
-                      key={`${active.id}-${epoch}`}
-                      workspaceId={active.id}
-                      definition={active.interface}
-                      collections={collections}
-                      report={report}
-                    />
-                  ) : (
-                    <section className="empty-state">
-                      <h2>Your interface will appear here.</h2>
-                      <p>Describe what you want to create in Chat.</p>
-                    </section>
-                  )}
+                  <div className="interface-heading">
+                    <h2>Interface</h2>
+                    <button
+                      aria-expanded={interfaceExpanded}
+                      aria-controls="live-interface-content"
+                      onClick={() => {
+                        setInterfaceExpanded((value) => !value);
+                        setPrimaryView("interface");
+                      }}
+                    >
+                      {interfaceExpanded
+                        ? "Restore interface"
+                        : "Expand interface"}
+                    </button>
+                  </div>
+                  <div
+                    className="interface-content"
+                    id="live-interface-content"
+                  >
+                    {active.interfaceError ? (
+                      <div className="error" role="alert">
+                        {active.interfaceError} Open Interface Builder to
+                        recover the original definition.
+                      </div>
+                    ) : !isEmptyInterface(active.interface) ? (
+                      <InterfaceRenderer
+                        key={`${active.id}-${epoch}`}
+                        workspaceId={active.id}
+                        definition={active.interface}
+                        collections={collections}
+                        report={report}
+                      />
+                    ) : (
+                      <section className="empty-state">
+                        <h2>Your interface will appear here.</h2>
+                        <p>Describe what you want to create in Chat.</p>
+                      </section>
+                    )}
+                  </div>
                 </section>
               </div>
               <button
                 className="developer-toggle"
+                aria-controls="developer-panel"
                 aria-expanded={developer}
                 onClick={() => {
                   const value = !developer;
@@ -468,7 +518,12 @@ export default function Dashboard({ configured }: { configured: boolean }) {
               >
                 Developer Tools {developer ? "▴" : "▾"}
               </button>
-              <section hidden={!developer} aria-label="Developer Tools">
+              <section
+                className="developer-panel"
+                id="developer-panel"
+                hidden={!developer}
+                aria-label="Developer Tools"
+              >
                 <p className="muted">
                   Workspace {active.id} · {collections.length} collections ·
                   Interface revision {active.revision}

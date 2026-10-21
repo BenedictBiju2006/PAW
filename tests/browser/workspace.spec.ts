@@ -212,7 +212,7 @@ test("sign up, manually configure a workspace, persist across sessions, and isol
     .fill("Plan my reading\nKeep the current workspace data.");
   await page.getByRole("button", { name: "Save message", exact: true }).click();
   await expect(page.getByRole("log")).toContainText("Plan my reading");
-  await page.getByText("Conversation actions", { exact: true }).click();
+  await page.locator(".conversation-actions summary").click();
   page.once("dialog", (dialog) => dialog.accept("Reading plan"));
   await page
     .getByRole("button", { name: "Rename conversation", exact: true })
@@ -282,7 +282,7 @@ test("sign up, manually configure a workspace, persist across sessions, and isol
     .getByRole("navigation", { name: "Conversations", exact: true })
     .getByRole("button", { name: "New conversation", exact: true })
     .click();
-  await page.getByText("Conversation actions", { exact: true }).click();
+  await page.locator(".conversation-actions summary").click();
   page.once("dialog", (dialog) => dialog.dismiss());
   await page
     .getByRole("button", { name: "Delete conversation", exact: true })

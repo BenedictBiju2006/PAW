@@ -666,3 +666,150 @@ test("provider errors distinguish invalid Gemini keys, unavailable models, quota
   assert.match(providerError({ statusCode: 429 }, "Groq"), /rate limit/);
   assert.match(providerError({ statusCode: 503 }, "Gemini"), /outage/);
 });
+
+test("Gemini defaults use verified stable 3.x tool models without rewriting saved legacy settings", async () => {
+  const { providerModels, validateModel } =
+    await import("../packages/agent/registry");
+  assert.deepEqual(providerModels("google", {}), [
+    "gemini-3.8-flash",
+    "gemini-3.5-flash-lite",
+  ]);
+  assert.deepEqual(providerModels("google", {}, "gemini-2.5-pro"), [
+    "gemini-3.8-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-2.5-pro",
+  ]);
+  validateModel("google", "gemini-2.5-pro", {}, "gemini-2.5-pro");
+  assert.throws(() => validateModel("google", "gemini-2.5-pro", {}));
+  assert.deepEqual(
+    providerModels("google", { PAW_GOOGLE_MODELS: "gemini-2.5-flash" }),
+    ["gemini-2.5-flash"],
+  );
+  assert.throws(() =>
+    validateModel(
+      "google",
+      "gemini-2.5-pro",
+      { PAW_GOOGLE_MODELS: "gemini-3.8-flash" },
+      "gemini-2.5-pro",
+    ),
+  );
+  assert.throws(
+    () =>
+      validateModel("google", "gemma-3-27b-it", {
+        PAW_GOOGLE_MODELS: "gemma-3-27b-it",
+      }),
+    /structured tool calling/,
+  );
+});
+
+test("Gemini metadata validation never performs inference or promises inference access", async () => {
+  const { validateProviderKey } = await import("../packages/agent/registry");
+  let count = 0;
+  const result = await validateProviderKey(
+    "google",
+    "gemini-3.8-flash",
+    "test-secret",
+    async (url, init) => {
+      count++;
+      assert.equal(
+        String(url),
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash",
+      );
+      assert.equal(init?.method ?? "GET", "GET");
+      assert.equal(init?.body, undefined);
+      return Response.json({ supportedGenerationMethods: ["generateContent"] });
+    },
+  );
+  assert.equal(count, 1);
+  assert.equal(result.level, "metadata");
+  assert.equal(result.inferenceVerified, false);
+  assert.match(result.notice, /have not been tested/);
+  for (const metadata of [
+    null,
+    {},
+    { supportedGenerationMethods: ["embedContent"] },
+  ])
+    await assert.rejects(
+      () =>
+        validateProviderKey(
+          "google",
+          "gemini-3.8-flash",
+          "test-secret",
+          async () => Response.json(metadata),
+        ),
+      /structured tool calling/,
+    );
+});
+
+test("Google validation and inference errors distinguish restricted projects from not-found, invalid keys and unsupported tools", async () => {
+  const { validateProviderKey } = await import("../packages/agent/registry");
+  const cases = [
+    {
+      status: 404,
+      error: { status: "NOT_FOUND", message: "Model not found" },
+      expected: /not found/,
+    },
+    {
+      status: 404,
+      error: {
+        status: "NOT_FOUND",
+        message: "Gemini 2.5 is not available to new projects. secret-key",
+      },
+      expected: /access is restricted/,
+    },
+    {
+      status: 403,
+      error: {
+        status: "PERMISSION_DENIED",
+        message: "Project access restricted. secret-key",
+      },
+      expected: /access is restricted/,
+    },
+    {
+      status: 400,
+      error: {
+        details: [{ reason: "API_KEY_INVALID" }],
+        message: "secret-key",
+      },
+      expected: /API credentials/,
+    },
+    {
+      status: 429,
+      error: {
+        status: "RESOURCE_EXHAUSTED",
+        message: "Request limit. secret-key",
+      },
+      expected: /rate limit/,
+    },
+    {
+      status: 400,
+      error: {
+        status: "INVALID_ARGUMENT",
+        message: "Function calling is not supported for this model. secret-key",
+      },
+      expected: /structured tool calling/,
+    },
+  ];
+  for (const c of cases) {
+    assert.match(
+      providerError(
+        {
+          statusCode: c.status,
+          responseBody: JSON.stringify({ error: c.error }),
+        },
+        "google",
+      ),
+      c.expected,
+    );
+    await assert.rejects(
+      () =>
+        validateProviderKey(
+          "google",
+          "gemini-3.8-flash",
+          "secret-key",
+          async () => Response.json({ error: c.error }, { status: c.status }),
+        ),
+      (e) => c.expected.test(String(e)) && !String(e).includes("secret-key"),
+    );
+  }
+});

@@ -1612,3 +1612,99 @@ test(
     assert.ok((await client(a).from("ai_preferences").select("*")).error);
   },
 );
+
+test(
+  "saved Gemini legacy key can select and validate a replacement without re-entry or losing other providers",
+  { skip: !enabled },
+  async () => {
+    const { ProviderSettingsService } =
+      await import("../packages/agent/settings");
+    const { encryptCredential } = await import("../packages/agent/credentials");
+    const admin = client(undefined, "service_role");
+    const env = {
+      PAW_CREDENTIAL_ENCRYPTION_KEY: Buffer.alloc(32, 12).toString("base64"),
+    };
+    const credential = encryptCredential(
+      "saved-google-fixture-key",
+      b,
+      env,
+      "google",
+    );
+    assert.equal(
+      (
+        await admin
+          .from("provider_settings")
+          .upsert(
+            {
+              user_id: b,
+              provider: "google",
+              model: "gemini-2.5-pro",
+              credential,
+              token_warning: 12345,
+            },
+            { onConflict: "user_id,provider" },
+          )
+      ).error,
+      null,
+    );
+    assert.equal(
+      (
+        await admin
+          .from("ai_preferences")
+          .upsert({ user_id: b, provider: "google", model: "gemini-2.5-pro" })
+      ).error,
+      null,
+    );
+    let calls = 0;
+    const settings = new ProviderSettingsService(
+      admin,
+      b,
+      env,
+      async (url, init) => {
+        calls++;
+        assert.match(String(url), /gemini-3.8-flash$/);
+        assert.equal(
+          new Headers(init?.headers).get("x-goog-api-key"),
+          "saved-google-fixture-key",
+        );
+        assert.equal(init?.body, undefined);
+        return Response.json({
+          supportedGenerationMethods: ["generateContent"],
+        });
+      },
+    );
+    assert.equal((await settings.resolve()).model, "gemini-2.5-pro");
+    const initial = await settings.status();
+    assert.ok(initial.models.includes("gemini-2.5-pro"));
+    assert.ok(initial.models.includes("gemini-3.8-flash"));
+    // Neither the upgrade nor a failed validation changes the original ciphertext.
+    assert.deepEqual((await settings.read("google")).credential, credential);
+    const restricted = new ProviderSettingsService(admin, b, env, async () =>
+      Response.json(
+        { error: { message: "not available to new projects" } },
+        { status: 404 },
+      ),
+    );
+    await assert.rejects(
+      () => restricted.save({ provider: "google", model: "gemini-3.8-flash" }),
+      /access is restricted/,
+    );
+    assert.equal((await settings.resolve()).model, "gemini-2.5-pro");
+    assert.deepEqual((await settings.read("google")).credential, credential);
+    const saved = await settings.save({
+      provider: "google",
+      model: "gemini-3.8-flash",
+      tokenWarning: 12345,
+    });
+    assert.equal(saved.validation.inferenceVerified, false);
+    assert.equal(calls, 1);
+    assert.equal((await settings.resolve()).apiKey, "saved-google-fixture-key");
+    assert.equal((await settings.resolve()).model, "gemini-3.8-flash");
+    assert.equal(
+      (await settings.status()).providers.find((p) => p.id === "openai")
+        ?.configured,
+      true,
+    );
+    assert.ok(!JSON.stringify(saved).includes("saved-google-fixture-key"));
+  },
+);

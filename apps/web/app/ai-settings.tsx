@@ -11,6 +11,7 @@ export type AIStatus = {
     tokenWarning: number;
     dashboard: string;
   }[];
+  validation?: { level: "metadata"; inferenceVerified: false; notice: string };
   configured: boolean;
   encryptionReady: boolean;
   provider: string;
@@ -88,7 +89,10 @@ export default function AISettings({
                 });
                 setStatus(next);
                 updated(next);
-                setNotice("Key validated and settings saved.");
+                setNotice(
+                  next.validation?.notice ??
+                    "Model metadata checked and settings saved. Inference has not been tested.",
+                );
               } catch (e) {
                 setError((e as Error).message);
               } finally {
@@ -133,9 +137,12 @@ export default function AISettings({
               </select>
             </label>
             <p className="muted">
-              Validation checks model access without inference. Tool support is
-              maintained by the server allowlist; account quota is checked by
-              the provider during use.
+              Validation checks model metadata without making a billable
+              inference request. Metadata does not guarantee inference or
+              project access. Tool support follows the server allowlist; quota
+              and access are checked by the provider when you send a message.
+              Leave the key blank to choose a replacement model with your saved
+              key.
             </p>
             <p>
               <a
