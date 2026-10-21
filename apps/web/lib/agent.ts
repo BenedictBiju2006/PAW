@@ -11,7 +11,7 @@ import { ProviderSettingsService } from "../../../packages/agent/settings";
 import { AgentStore } from "../../../packages/agent/store";
 import { AgentOrchestrator } from "../../../packages/agent/orchestrator";
 import { modelHistory } from "../../../packages/agent/context";
-import { openaiProvider } from "../../../packages/agent/providers/openai";
+import { resolveProvider } from "../../../packages/agent/registry";
 import { createToolRegistry } from "../../../packages/tools/definitions";
 import { ToolExecutor } from "../../../packages/tools/executor";
 const active = new Map<string, AbortController>();
@@ -138,7 +138,11 @@ export async function agentResponse(
           workspaceId: a.workspaceId,
           permissions: new Set(["read", "write", "delete"]),
         });
-        await new AgentOrchestrator(openaiProvider, executor, store).run(
+        await new AgentOrchestrator(
+          resolveProvider(settings.provider).adapter,
+          executor,
+          store,
+        ).run(
           {
             turnId: a.turnId,
             workspaceId: a.workspaceId,

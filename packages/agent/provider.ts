@@ -1,8 +1,20 @@
-import type { ModelMessage, ToolSet } from "ai";
+import type { ModelMessage, ToolSet, ToolCallPart } from "ai";
 export type ProviderEvent =
   | { type: "text"; text: string }
-  | { type: "call"; id: string; name: string; args: unknown }
-  | { type: "usage"; input: number; output: number; reason: string };
+  | {
+      type: "call";
+      id: string;
+      name: string;
+      args: unknown;
+      providerOptions?: ToolCallPart["providerOptions"];
+    }
+  | {
+      type: "usage";
+      input: number;
+      output: number;
+      reason: string;
+      cachedInput?: number;
+    };
 export interface ModelProvider {
   id: string;
   capabilities: { streaming: boolean; tools: boolean; hostedMcp: boolean };
@@ -16,14 +28,45 @@ export interface ModelProvider {
     maxOutputTokens: number;
   }): AsyncIterable<ProviderEvent>;
 }
-export function providerError(error: unknown): string {
-  const e = error as { statusCode?: number; status?: number; name?: string };
+export function providerError(
+  error: unknown,
+  provider = "Model provider",
+): string {
+  const e = error as {
+    statusCode?: number;
+    status?: number;
+    name?: string;
+    responseBody?: string;
+  };
   const code = e?.statusCode ?? e?.status;
+  const body =
+    typeof e?.responseBody === "string" ? e.responseBody.slice(0, 20000) : "";
+  if (/API_KEY_INVALID|API_KEY_EXPIRED|invalid_api_key/i.test(body))
+    return `${provider} rejected the API credentials. Replace this provider's key in AI settings.`;
+  if (/model_not_found|model_decommissioned/i.test(body))
+    return `${provider} model unavailable. Choose another enabled model in AI settings.`;
   if (code === 401 || code === 403)
-    return "OpenAI rejected the API key or model access. Replace or validate your key in AI settings.";
-  if (code === 429)
-    return "OpenAI rate limit or quota reached. Check API billing and limits, then try a new request later.";
+    return `${provider} rejected the credentials or model permission. Validate or replace this provider's key in AI settings.`;
+  if (code === 404)
+    return `${provider} model unavailable. Choose another enabled model in AI settings.`;
+  if (code === 429) {
+    const quota =
+      /insufficient_quota|quota_exceeded|billing_hard_limit_reached/i.test(
+        body,
+      );
+    return quota
+      ? `${provider} API quota exhausted. Check your account quota and billing. No provider was switched automatically.`
+      : `${provider} rate limit or quota reached. Check your account limits and retry later, or explicitly select another provider.`;
+  }
+  if (code && code >= 500)
+    return `${provider} is experiencing an outage. Retry later; completed changes are preserved.`;
   if (e?.name === "AbortError" || e?.name === "TimeoutError")
     return "Generation stopped or timed out. Completed workspace changes are preserved.";
-  return "The model provider is unavailable or rejected the request. Check your API key, model access and network, then reload saved messages.";
+  if (e?.name === "TypeError" || e?.name === "AI_RetryError")
+    return `${provider} network failure. Check connectivity and retry later.`;
+  if (e?.name === "AI_UnsupportedFunctionalityError")
+    return `${provider} does not support the required structured tool calling. Choose another enabled model.`;
+  if (code === 400 || code === 422)
+    return `${provider} rejected the request or tool-calling format. Choose a supported model; completed changes are preserved.`;
+  return `${provider} is unavailable or rejected the request. Check key, model access and network, then reload saved messages.`;
 }

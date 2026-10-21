@@ -6,12 +6,16 @@ import {
   decryptCredential,
   credentialKey,
 } from "./credentials";
+import {
+  providerId,
+  providerCatalog,
+  providerModels,
+  validateModel,
+  validateProviderKey,
+  type ProviderId,
+} from "./registry";
 export function supportedModels(env: NodeJS.ProcessEnv = process.env) {
-  return (env.PAW_OPENAI_MODELS || "gpt-4.1-mini,gpt-4.1")
-    .split(",")
-    .map((s) => s.trim())
-    .filter((s) => /^[a-zA-Z0-9._-]{1,100}$/.test(s))
-    .slice(0, 20);
+  return providerModels("openai", env);
 }
 export class ProviderSettingsService {
   constructor(
@@ -22,18 +26,37 @@ export class ProviderSettingsService {
   ) {
     z.uuid().parse(actor);
   }
-  async read() {
-    const row = checked(
+  async read(provider: ProviderId = "openai") {
+    return checked(
       await this.admin
         .from("provider_settings")
         .select("*")
         .eq("user_id", this.actor)
+        .eq("provider", provider)
         .maybeSingle(),
     );
-    return row;
+  }
+  private async preference() {
+    return checked(
+      await this.admin
+        .from("ai_preferences")
+        .select("provider,model")
+        .eq("user_id", this.actor)
+        .maybeSingle(),
+    );
   }
   async status() {
-    const row = await this.read();
+    const rows =
+      checked(
+        await this.admin
+          .from("provider_settings")
+          .select("provider,model,token_warning")
+          .eq("user_id", this.actor),
+      ) ?? [];
+    const preference = await this.preference();
+    // Never silently select another provider when the active credential is removed.
+    const provider: ProviderId = preference?.provider ?? "openai";
+    const row = rows.find((r) => r.provider === provider);
     let encryptionReady = true;
     try {
       credentialKey(this.env);
@@ -59,10 +82,23 @@ export class ProviderSettingsService {
     return {
       configured: !!row,
       encryptionReady,
-      provider: "openai",
-      model: row?.model ?? supportedModels(this.env)[0],
-      models: supportedModels(this.env),
+      provider,
+      model:
+        preference?.model ??
+        row?.model ??
+        providerModels(provider, this.env)[0] ??
+        "",
+      models: providerModels(provider, this.env),
       tokenWarning: row?.token_warning ?? 100000,
+      providers: providerCatalog(this.env).map((p) => {
+        const saved = rows.find((r) => r.provider === p.id);
+        return {
+          ...p,
+          configured: !!saved,
+          model: saved?.model ?? p.models[0] ?? "",
+          tokenWarning: saved?.token_warning ?? 100000,
+        };
+      }),
       usage: {
         ...usage,
         cost: null,
@@ -75,83 +111,97 @@ export class ProviderSettingsService {
     credentialKey(this.env);
     const a = z
       .object({
+        provider: providerId.default("openai"),
         apiKey: z.string().trim().min(10).max(500).optional(),
         model: z.string().min(1).max(100),
         tokenWarning: z.number().int().min(1000).max(100000000).default(100000),
       })
       .strict()
       .parse(input);
-    if (!supportedModels(this.env).includes(a.model))
-      throw new ServiceError("Choose a supported model.");
-    const previous = await this.read();
+    validateModel(a.provider, a.model, this.env);
+    const previous = await this.read(a.provider);
     const key =
       a.apiKey ??
       (previous
-        ? decryptCredential(previous.credential, this.actor, this.env)
+        ? decryptCredential(
+            previous.credential,
+            this.actor,
+            this.env,
+            a.provider,
+          )
         : undefined);
-    if (!key) throw new ServiceError("Add your OpenAI API key.");
-    let response: Response;
-    try {
-      response = await this.request(
-        `https://api.openai.com/v1/models/${encodeURIComponent(a.model)}`,
-        {
-          headers: { Authorization: `Bearer ${key}` },
-          signal: AbortSignal.timeout(15000),
-          redirect: "error",
-        },
-      );
-    } catch {
-      throw new ServiceError(
-        "Could not validate OpenAI access. Check your network and try again.",
-        502,
-      );
-    }
-    if (!response.ok) {
-      await response.body?.cancel();
-      throw new ServiceError(
-        response.status === 429
-          ? "OpenAI rate limited key validation. Try again later."
-          : "OpenAI rejected the key or model access. Check your API key and supported model.",
-      );
-    }
-    await response.body?.cancel();
+    if (!key) throw new ServiceError("Add this provider's API key.");
+    await validateProviderKey(a.provider, a.model, key, this.request);
     checked(
       await this.admin
         .from("provider_settings")
-        .upsert({
-          user_id: this.actor,
-          provider: "openai",
-          model: a.model,
-          credential: encryptCredential(key, this.actor, this.env),
-          token_warning: a.tokenWarning,
-          updated_at: new Date().toISOString(),
-        }),
+        .upsert(
+          {
+            user_id: this.actor,
+            provider: a.provider,
+            model: a.model,
+            credential: encryptCredential(
+              key,
+              this.actor,
+              this.env,
+              a.provider,
+            ),
+            token_warning: a.tokenWarning,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "user_id,provider" },
+        ),
+    );
+    return this.select({ provider: a.provider, model: a.model });
+  }
+  async select(input: unknown) {
+    const a = z
+      .object({ provider: providerId, model: z.string().min(1).max(100) })
+      .strict()
+      .parse(input);
+    validateModel(a.provider, a.model, this.env);
+    if (!(await this.read(a.provider)))
+      throw new ServiceError(
+        "Add this provider's API key in AI settings first.",
+      );
+    checked(
+      await this.admin
+        .from("ai_preferences")
+        .upsert(
+          { user_id: this.actor, provider: a.provider, model: a.model },
+          { onConflict: "user_id" },
+        ),
     );
     return this.status();
   }
   async resolve() {
-    const row = await this.read();
+    const preference = await this.preference();
+    const provider: ProviderId = preference?.provider ?? "openai";
+    const row = await this.read(provider);
     if (!row)
       throw new ServiceError(
-        "Add and validate an OpenAI API key in AI settings before starting the agent.",
+        "Add and validate the selected provider's API key in AI settings before starting the agent.",
         400,
       );
-    if (!supportedModels(this.env).includes(row.model))
-      throw new ServiceError(
-        "Your selected model is no longer enabled. Update AI settings.",
-      );
+    const model = preference?.model ?? row.model;
+    validateModel(provider, model, this.env);
     return {
-      provider: row.provider as string,
-      model: row.model as string,
-      apiKey: decryptCredential(row.credential, this.actor, this.env),
+      provider,
+      model: model as string,
+      apiKey: decryptCredential(row.credential, this.actor, this.env, provider),
     };
   }
-  async remove() {
+  async remove(input: unknown = {}) {
+    const a = z
+      .object({ provider: providerId.default("openai") })
+      .strict()
+      .parse(input);
     checked(
       await this.admin
         .from("provider_settings")
         .delete()
-        .eq("user_id", this.actor),
+        .eq("user_id", this.actor)
+        .eq("provider", a.provider),
     );
     return { ok: true };
   }

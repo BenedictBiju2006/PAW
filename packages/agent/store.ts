@@ -65,6 +65,22 @@ export class AgentStore {
       }),
     ) as boolean;
   }
+  async diagnostics(
+    id: string,
+    requests: number,
+    calls: number,
+    cached: number | null,
+  ) {
+    checked(
+      await this.admin.rpc("record_turn_diagnostics", {
+        actor: this.actor,
+        turn: id,
+        requests,
+        calls,
+        cached,
+      }),
+    );
+  }
   async finish(
     id: string,
     status: Exclude<TurnStatus, "running" | "interrupted">,

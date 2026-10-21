@@ -1,4 +1,11 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
+import {
+  showChat,
+  newConversation,
+  openConversations,
+  developerTools,
+  showInterface,
+} from "./navigation";
 
 test("sign up, manually configure a workspace, persist across sessions, and isolate accounts", async ({
   page,
@@ -31,9 +38,11 @@ test("sign up, manually configure a workspace, persist across sessions, and isol
   await expect(
     page.getByRole("heading", { name: "Reading room", exact: true }),
   ).toBeVisible();
-  await page
-    .getByRole("button", { name: "+ Add your first collection" })
-    .click();
+  await expect(
+    page.getByRole("button", { name: /Developer Tools/ }),
+  ).toHaveAttribute("aria-expanded", "false");
+  await developerTools(page);
+  await page.getByRole("button", { name: "+ New collection" }).click();
   const collectionDialog = page.getByRole("dialog");
   await collectionDialog.getByLabel("Collection name").fill("Books");
   await collectionDialog
@@ -52,6 +61,7 @@ test("sign up, manually configure a workspace, persist across sessions, and isol
   await expect(
     page.getByRole("cell", { name: "The Left Hand of Darkness", exact: true }),
   ).toBeVisible();
+  await developerTools(page);
   await page.getByRole("tab", { name: "Interface builder" }).click();
   await page.getByRole("button", { name: "Add heading", exact: true }).click();
   await page
@@ -152,7 +162,7 @@ test("sign up, manually configure a workspace, persist across sessions, and isol
     .getByRole("button", { name: "Save interface", exact: true })
     .click();
   await expect(page.locator(".notice")).toContainText("Interface saved");
-  await page.getByRole("tab", { name: "Workspace" }).click();
+  await showInterface(page);
   await expect(
     page.getByRole("heading", { name: "My workspace", exact: true }),
   ).toBeVisible();
@@ -173,12 +183,16 @@ test("sign up, manually configure a workspace, persist across sessions, and isol
       .getByRole("img", { name: "Value counts for title across all records" })
       .getByText("A Wizard of Earthsea", { exact: true }),
   ).toBeVisible();
-  await page.getByLabel("Title *", { exact: true }).fill("The Dispossessed");
+  await page
+    .locator(".primary-interface")
+    .getByLabel("Title *", { exact: true })
+    .fill("The Dispossessed");
   await page.getByRole("button", { name: "Add record", exact: true }).click();
   await expect(
     page.getByRole("cell", { name: "The Dispossessed", exact: true }),
   ).toBeVisible();
   await page
+    .locator(".primary-interface")
     .getByLabel("Draft title", { exact: true })
     .fill("Created through A2UI action");
   await page.getByRole("button", { name: "Save draft", exact: true }).click();
@@ -188,13 +202,11 @@ test("sign up, manually configure a workspace, persist across sessions, and isol
       exact: true,
     }),
   ).toBeVisible();
-  await page.getByRole("tab", { name: "Chat", exact: true }).click();
+  await showChat(page);
   await expect(
-    page.getByText("Add your OpenAI API key in AI settings", { exact: false }),
+    page.getByText("Add a provider API key in AI settings", { exact: false }),
   ).toBeVisible();
-  await page
-    .getByRole("button", { name: "New conversation", exact: true })
-    .click();
+  await newConversation(page);
   await page
     .getByLabel("Message", { exact: true })
     .fill("Plan my reading\nKeep the current workspace data.");
@@ -208,15 +220,14 @@ test("sign up, manually configure a workspace, persist across sessions, and isol
   await expect(
     page.getByRole("heading", { name: "Reading plan", exact: true }),
   ).toBeVisible();
-  await page
-    .getByRole("button", { name: "New conversation", exact: true })
-    .click();
+  await newConversation(page);
   await expect(
     page.getByRole("heading", {
       name: "What would you like to create?",
       exact: true,
     }),
   ).toBeVisible();
+  await openConversations(page);
   await page
     .getByRole("navigation", { name: "Conversations", exact: true })
     .getByRole("button", { name: "Reading plan", exact: true })
@@ -259,12 +270,14 @@ test("sign up, manually configure a workspace, persist across sessions, and isol
   await expect(
     page.getByRole("cell", { name: "A Wizard of Earthsea", exact: true }),
   ).toBeVisible();
-  await page.getByRole("tab", { name: "Chat", exact: true }).click();
+  await showChat(page);
+  await openConversations(page);
   await page
     .getByRole("navigation", { name: "Conversations", exact: true })
     .getByRole("button", { name: "Reading plan", exact: true })
     .click();
   await expect(page.getByRole("log")).toContainText("Plan my reading");
+  await openConversations(page);
   await page
     .getByRole("navigation", { name: "Conversations", exact: true })
     .getByRole("button", { name: "New conversation", exact: true })
@@ -284,6 +297,7 @@ test("sign up, manually configure a workspace, persist across sessions, and isol
   await expect(
     page.getByRole("heading", { name: "Reading plan", exact: true }),
   ).toBeVisible();
+  await developerTools(page);
   await page.getByRole("tab", { name: "Interface builder" }).click();
   await page
     .getByRole("button", { name: "Revision history", exact: true })
@@ -303,7 +317,7 @@ test("sign up, manually configure a workspace, persist across sessions, and isol
     .getByRole("button", { name: "Restore as new revision" })
     .click();
   await expect(page.getByText(/Interface revision 4/)).toBeVisible();
-  await page.getByRole("tab", { name: "Workspace", exact: true }).click();
+  await showInterface(page);
   await expect(
     page.getByRole("cell", {
       name: "Created through A2UI action",
@@ -387,7 +401,7 @@ test("sign up, manually configure a workspace, persist across sessions, and isol
   await expect(
     page.getByRole("heading", { name: "Reading room", exact: true }),
   ).toBeVisible();
-  await page.getByRole("tab", { name: "Chat", exact: true }).click();
+  await showChat(page);
   await expect(page.getByLabel("Message", { exact: true })).toBeVisible();
   await page.screenshot({
     path: "/tmp/paw-workspace-mobile.png",

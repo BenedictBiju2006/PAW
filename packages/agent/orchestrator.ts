@@ -25,7 +25,8 @@ export function agentLimits(env: NodeJS.ProcessEnv = process.env) {
     contextChars: n("PAW_AGENT_MAX_CONTEXT_CHARS", 160000, 300000),
   };
 }
-type Store = Pick<AgentStore, "event" | "finish">;
+type Store = Pick<AgentStore, "event" | "finish"> &
+  Partial<Pick<AgentStore, "diagnostics">>;
 const bootstrap = [
   "search_tools",
   "describe_tool",
@@ -78,6 +79,8 @@ export class AgentOrchestrator {
         "Invoke a discovered capability after describe_tool has returned its schema in this turn. Permissions and confirmation remain enforced by PAW.",
       inputSchema: dispatch,
     });
+    let requests = 0,
+      cached: number | null = null;
     let calls = 0,
       tokensIn = 0,
       tokensOut = 0,
@@ -114,10 +117,14 @@ export class AgentOrchestrator {
           throw new LimitError(
             "The context limit was reached. Completed changes are saved. Start a new request to continue.",
           );
-        const pending: { id: string; name: string; args: unknown }[] = [];
+        const pending: Extract<
+          import("./provider").ProviderEvent,
+          { type: "call" }
+        >[] = [];
         let stepText = "",
           finishReason = "stop";
         fragmentId = `text-${step}`;
+        requests++;
         for await (const event of this.provider.stream({
           model: input.model,
           apiKey: input.apiKey,
@@ -145,6 +152,8 @@ export class AgentOrchestrator {
                 "The tool-call limit was reached. Completed operations are saved.",
               );
           } else {
+            if (event.cachedInput !== undefined)
+              cached = (cached ?? 0) + event.cachedInput;
             tokensIn += event.input;
             tokensOut += event.output;
             finishReason = event.reason;
@@ -164,6 +173,7 @@ export class AgentOrchestrator {
             toolCallId: call.id,
             toolName: call.name,
             input: call.args,
+            providerOptions: call.providerOptions,
           });
         messages.push({ role: "assistant", content: assistant });
         for (const call of pending) {
@@ -329,7 +339,9 @@ export class AgentOrchestrator {
           ? "limited"
           : "failed";
       notice =
-        error instanceof LimitError ? error.message : providerError(error);
+        error instanceof LimitError
+          ? error.message
+          : providerError(error, this.provider.id);
     } finally {
       try {
         await flush();
@@ -342,6 +354,7 @@ export class AgentOrchestrator {
         notice =
           "Transcript persistence was interrupted. Completed workspace operations may still be saved; inspect current state before issuing a new request.";
       } finally {
+        await this.store.diagnostics?.(input.turnId, requests, calls, cached);
         await this.store.finish(
           input.turnId,
           status,

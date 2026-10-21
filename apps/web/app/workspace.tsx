@@ -24,6 +24,13 @@ export default function Dashboard({ configured }: { configured: boolean }) {
   const [tab, setTab] = useState<"workspace" | "data" | "interface" | "chat">(
     "workspace",
   );
+  const [developer, setDeveloper] = useState(false);
+  const [primaryView, setPrimaryView] = useState<"chat" | "interface">("chat");
+  useEffect(() => {
+    try {
+      setDeveloper(localStorage.getItem("paw.developerTools") === "true");
+    } catch {}
+  }, []);
   const [epoch, setEpoch] = useState(0);
   const [selectedCollection, setSelectedCollection] = useState("");
   const [signup, setSignup] = useState(false);
@@ -348,199 +355,228 @@ export default function Dashboard({ configured }: { configured: boolean }) {
               <div className="page-heading">
                 <div>
                   <h1>{active.name}</h1>
-                  <p>
-                    {collections.length} collection
-                    {collections.length === 1 ? "" : "s"} · Interface revision{" "}
-                    {active.revision}
-                  </p>
                 </div>
                 <div className="row">
-                  <button onClick={() => setRenaming(true)}>Rename</button>
-                  <button
-                    className="danger-text"
-                    disabled={busy}
-                    onClick={() => {
-                      if (
-                        confirm(
-                          `Delete “${active.name}” and all its data? This cannot be undone.`,
-                        )
-                      )
-                        run(async () => {
-                          await api(`workspaces/${active.id}`, "DELETE", {
-                            confirmed: true,
-                          });
-                          setActive(null);
-                          window.history.replaceState(null, "", "/");
-                          await refreshList();
-                        });
-                    }}
-                  >
-                    Delete workspace
-                  </button>
+                  <details className="workspace-settings">
+                    <summary>Workspace settings</summary>
+                    <div className="row">
+                      <button onClick={() => setRenaming(true)}>Rename</button>
+                      <button
+                        className="danger-text"
+                        disabled={busy}
+                        onClick={() => {
+                          if (
+                            confirm(
+                              `Delete “${active.name}” and all its data? This cannot be undone.`,
+                            )
+                          )
+                            run(async () => {
+                              await api(`workspaces/${active.id}`, "DELETE", {
+                                confirmed: true,
+                              });
+                              setActive(null);
+                              window.history.replaceState(null, "", "/");
+                              await refreshList();
+                            });
+                        }}
+                      >
+                        Delete workspace
+                      </button>{" "}
+                    </div>
+                  </details>
                 </div>
               </div>
-              <div className="tabs" role="tablist" aria-label="Workspace views">
-                {(["workspace", "data", "interface", "chat"] as const).map(
-                  (t) => (
-                    <button
-                      key={t}
-                      role="tab"
-                      aria-selected={tab === t}
-                      onClick={() => setTab(t)}
-                    >
-                      {t === "workspace"
-                        ? "Workspace"
-                        : t === "data"
-                          ? "Collections & data"
-                          : t === "interface"
-                            ? "Interface builder"
-                            : "Chat"}
-                    </button>
-                  ),
-                )}
+              <div
+                className="primary-view-switch tabs"
+                aria-label="Primary view"
+              >
+                <button
+                  aria-pressed={primaryView === "chat"}
+                  onClick={() => setPrimaryView("chat")}
+                >
+                  Chat
+                </button>
+                <button
+                  aria-pressed={primaryView === "interface"}
+                  onClick={() => setPrimaryView("interface")}
+                >
+                  Interface
+                </button>
               </div>
-              {tab === "workspace" &&
-                (active.interfaceError ? (
-                  <div className="error" role="alert">
-                    {active.interfaceError} Open Interface Builder to recover
-                    the original definition.
-                  </div>
-                ) : !isEmptyInterface(active.interface) ? (
-                  <InterfaceRenderer
-                    key={`${active.id}-${epoch}`}
+              <div className={`workspace-panes showing-${primaryView}`}>
+                <div className="primary-chat">
+                  <Chat
+                    key={active.id}
                     workspaceId={active.id}
-                    definition={active.interface}
-                    collections={collections}
-                    report={report}
+                    refresh={() => {
+                      void Promise.all([
+                        api<Workspace>(`workspaces/${active.id}`),
+                        api<Collection[]>(
+                          `workspaces/${active.id}/collections`,
+                        ),
+                      ])
+                        .then(([workspace, items]) => {
+                          setActive(workspace);
+                          setCollections(items);
+                          setSelectedCollection((current) =>
+                            items.some((c) => c.id === current)
+                              ? current
+                              : (items[0]?.id ?? ""),
+                          );
+                          setEpoch((e) => e + 1);
+                        })
+                        .catch((e) => setError(e.message));
+                    }}
                   />
-                ) : (
-                  <section className="empty-state">
-                    <h2>No interface yet</h2>
-                    <p>
-                      Add a collection to store your data, then build an
-                      interface with forms, tables, text, and charts.
-                    </p>
-                    <button
-                      className="primary"
-                      onClick={() => {
-                        setTab("data");
-                        (setError(""), setNewCollection(true));
-                      }}
-                    >
-                      + Add your first collection
-                    </button>
-                    <button
-                      className="link"
-                      onClick={() => setTab("interface")}
-                    >
-                      Open interface builder
-                    </button>
-                  </section>
-                ))}
-              {tab === "data" && (
-                <>
-                  <div className="section-line">
-                    <div className="row">
-                      <label className="sr-only" htmlFor="collection-select">
-                        Collection
-                      </label>
-                      <select
-                        id="collection-select"
-                        value={selectedCollection}
-                        onChange={(e) => setSelectedCollection(e.target.value)}
-                      >
-                        <option value="" disabled>
-                          Select collection
-                        </option>
-                        {collections.map((c) => (
-                          <option key={c.id} value={c.id}>
-                            {c.name}
-                          </option>
-                        ))}
-                      </select>
+                </div>
+                <section
+                  className="primary-interface"
+                  aria-label="Live interface"
+                >
+                  <h2>Interface</h2>
+                  {active.interfaceError ? (
+                    <div className="error" role="alert">
+                      {active.interfaceError} Open Interface Builder to recover
+                      the original definition.
                     </div>
-                    <button
-                      onClick={() => (setError(""), setNewCollection(true))}
-                    >
-                      + New collection
-                    </button>
-                  </div>
-                  {currentCollection ? (
-                    <>
-                      <details className="schema-details">
-                        <summary>
-                          Collection schema · {currentCollection.fields.length}{" "}
-                          fields
-                        </summary>
-                        <code>Collection ID: {currentCollection.id}</code>
-                        <div className="field-chips">
-                          {currentCollection.fields.map((f) => (
-                            <span key={f.key}>
-                              {f.label}{" "}
-                              <small>
-                                {f.type}
-                                {f.required ? " · required" : ""}
-                              </small>
-                            </span>
-                          ))}
-                        </div>
-                      </details>
-                      <DataView
-                        key={`${currentCollection.id}-${epoch}`}
-                        workspaceId={active.id}
-                        collection={currentCollection}
-                        mode="table"
-                        report={report}
-                      />
-                    </>
+                  ) : !isEmptyInterface(active.interface) ? (
+                    <InterfaceRenderer
+                      key={`${active.id}-${epoch}`}
+                      workspaceId={active.id}
+                      definition={active.interface}
+                      collections={collections}
+                      report={report}
+                    />
                   ) : (
-                    <div className="empty-state">
-                      <h2>No collections yet</h2>
-                      <p>
-                        A collection defines the fields your records can hold.
-                      </p>
+                    <section className="empty-state">
+                      <h2>Your interface will appear here.</h2>
+                      <p>Describe what you want to create in Chat.</p>
+                    </section>
+                  )}
+                </section>
+              </div>
+              <button
+                className="developer-toggle"
+                aria-expanded={developer}
+                onClick={() => {
+                  const value = !developer;
+                  setDeveloper(value);
+                  try {
+                    localStorage.setItem("paw.developerTools", String(value));
+                  } catch {}
+                }}
+              >
+                Developer Tools {developer ? "▴" : "▾"}
+              </button>
+              <section hidden={!developer} aria-label="Developer Tools">
+                <p className="muted">
+                  Workspace {active.id} · {collections.length} collections ·
+                  Interface revision {active.revision}
+                </p>
+                <div
+                  className="tabs"
+                  role="tablist"
+                  aria-label="Developer views"
+                >
+                  <button
+                    role="tab"
+                    aria-selected={tab !== "interface"}
+                    onClick={() => setTab("data")}
+                  >
+                    Collections &amp; data
+                  </button>
+                  <button
+                    role="tab"
+                    aria-selected={tab === "interface"}
+                    onClick={() => setTab("interface")}
+                  >
+                    Interface builder
+                  </button>
+                </div>
+                {tab !== "interface" && (
+                  <>
+                    <div className="section-line">
+                      <div className="row">
+                        <label className="sr-only" htmlFor="collection-select">
+                          Collection
+                        </label>
+                        <select
+                          id="collection-select"
+                          value={selectedCollection}
+                          onChange={(e) =>
+                            setSelectedCollection(e.target.value)
+                          }
+                        >
+                          <option value="" disabled>
+                            Select collection
+                          </option>
+                          {collections.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                       <button
-                        className="primary"
                         onClick={() => (setError(""), setNewCollection(true))}
                       >
-                        + Create collection
+                        + New collection
                       </button>
                     </div>
-                  )}
-                </>
-              )}
-              {tab === "chat" && (
-                <Chat
-                  key={active.id}
-                  workspaceId={active.id}
-                  refresh={() => {
-                    void Promise.all([
-                      api<Workspace>(`workspaces/${active.id}`),
-                      api<Collection[]>(`workspaces/${active.id}/collections`),
-                    ])
-                      .then(([workspace, items]) => {
-                        setActive(workspace);
-                        setCollections(items);
-                        setSelectedCollection((current) =>
-                          items.some((c) => c.id === current)
-                            ? current
-                            : (items[0]?.id ?? ""),
-                        );
-                        setEpoch((e) => e + 1);
-                      })
-                      .catch((e) => setError(e.message));
-                  }}
-                />
-              )}
-              {tab === "interface" && (
-                <InterfaceBuilder
-                  workspace={active}
-                  collections={collections}
-                  busy={busy}
-                  save={save}
-                  reload={() => open(active.id)}
-                />
-              )}
+                    {currentCollection ? (
+                      <>
+                        <details className="schema-details">
+                          <summary>
+                            Collection schema ·{" "}
+                            {currentCollection.fields.length} fields
+                          </summary>
+                          <code>Collection ID: {currentCollection.id}</code>
+                          <div className="field-chips">
+                            {currentCollection.fields.map((f) => (
+                              <span key={f.key}>
+                                {f.label}{" "}
+                                <small>
+                                  {f.type}
+                                  {f.required ? " · required" : ""}
+                                </small>
+                              </span>
+                            ))}
+                          </div>
+                        </details>
+                        <DataView
+                          key={`${currentCollection.id}-${epoch}`}
+                          workspaceId={active.id}
+                          collection={currentCollection}
+                          mode="table"
+                          report={report}
+                        />
+                      </>
+                    ) : (
+                      <div className="empty-state">
+                        <h2>No collections yet</h2>
+                        <p>
+                          A collection defines the fields your records can hold.
+                        </p>
+                        <button
+                          className="primary"
+                          onClick={() => (setError(""), setNewCollection(true))}
+                        >
+                          + Create collection
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )}
+                {tab === "interface" && (
+                  <InterfaceBuilder
+                    workspace={active}
+                    collections={collections}
+                    busy={busy}
+                    save={save}
+                    reload={() => open(active.id)}
+                  />
+                )}
+              </section>
             </>
           )}
         </main>

@@ -34,6 +34,7 @@ export const openaiProvider: ModelProvider = {
           input: part.totalUsage.inputTokens ?? 0,
           output: part.totalUsage.outputTokens ?? 0,
           reason: part.finishReason,
+          cachedInput: part.totalUsage.inputTokenDetails?.cacheReadTokens,
         };
       else if (part.type === "error") throw part.error;
       else if (part.type === "abort")
