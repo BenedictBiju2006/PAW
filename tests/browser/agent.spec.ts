@@ -21,7 +21,7 @@ test("native streaming transcript, tools, mutation refresh, safe Markdown and co
   let selected = { provider: "openai", model: "gpt-4.1-mini" };
   const providers = [
     { id: "openai", name: "OpenAI", model: "gpt-4.1-mini" },
-    { id: "google", name: "Gemini", model: "gemini-2.5-flash" },
+    { id: "google", name: "Gemini", model: "gemini-3.8-flash" },
     { id: "groq", name: "Groq", model: "llama-3.3-70b-versatile" },
   ].map((p) => ({
     ...p,
@@ -83,7 +83,7 @@ test("native streaming transcript, tools, mutation refresh, safe Markdown and co
   await newConversation(page);
   await page
     .getByLabel("AI model", { exact: true })
-    .selectOption("google:gemini-2.5-flash");
+    .selectOption("google:gemini-3.8-flash");
   let releaseResponse!: () => void;
   const responseGate = new Promise<void>((resolve) => {
     releaseResponse = resolve;
@@ -256,6 +256,7 @@ test("native streaming transcript, tools, mutation refresh, safe Markdown and co
         "data: [DONE]\n\n",
     });
   });
+  await page.setViewportSize({ width: 1024, height: 900 });
   await page.getByLabel("Message", { exact: true }).fill("Create notes");
   await expect(
     page.getByRole("button", { name: "Send message", exact: true }),
@@ -267,7 +268,15 @@ test("native streaming transcript, tools, mutation refresh, safe Markdown and co
   await page
     .getByLabel("AI model", { exact: true })
     .selectOption("groq:llama-3.3-70b-versatile");
+  await showInterface(page);
   releaseResponse();
+  await expect(
+    page
+      .locator(".primary-interface")
+      .getByRole("heading", { name: "Agent interface", exact: true }),
+  ).toBeVisible();
+  await showChat(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
   await expect(
     page.getByRole("heading", { name: "Workspace updated", exact: true }),
   ).toBeVisible();
@@ -290,7 +299,7 @@ test("native streaming transcript, tools, mutation refresh, safe Markdown and co
     )
   ).json();
   expect(savedTurns[0].provider).toBe("google");
-  expect(savedTurns[0].model).toBe("gemini-2.5-flash");
+  expect(savedTurns[0].model).toBe("gemini-3.8-flash");
   await expect(page.getByLabel("AI model", { exact: true })).toHaveValue(
     "groq:llama-3.3-70b-versatile",
   );
@@ -314,7 +323,7 @@ test("native streaming transcript, tools, mutation refresh, safe Markdown and co
     .selectOption("google");
   await expect(
     settingsDialog.getByRole("combobox", { name: "Model", exact: true }),
-  ).toHaveValue("gemini-2.5-flash");
+  ).toHaveValue("gemini-3.8-flash");
   await settingsDialog
     .getByLabel("API key", { exact: true })
     .fill("fixture-replacement-key");
@@ -334,7 +343,7 @@ test("native streaming transcript, tools, mutation refresh, safe Markdown and co
     .getByRole("button", { name: "Validate & save", exact: true })
     .click();
   await expect(settingsDialog.getByRole("status")).toContainText(
-    "Key validated",
+    "Model metadata checked",
   );
   await expect(
     settingsDialog.getByLabel("API key", { exact: true }),
@@ -390,7 +399,7 @@ test("native streaming transcript, tools, mutation refresh, safe Markdown and co
     page.getByRole("navigation", { name: "Conversations", exact: true }),
   ).toBeVisible();
   await page
-    .getByRole("button", { name: "Conversations", exact: true })
+    .getByRole("button", { name: "Close conversations", exact: true })
     .click();
   await expect(page.getByLabel("Message", { exact: true })).toBeVisible();
   expect(

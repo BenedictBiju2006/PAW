@@ -79,7 +79,7 @@ export default function InterfaceBuilder({
         <div>
           <h2>Interface Builder</h2>
           <p>
-            A2UI v0.9.1 messages. Preview is read-only; use the Workspace tab
+            A2UI v0.9.1 messages. Preview is read-only; use the Interface pane
             for persistent changes.
           </p>
         </div>

@@ -41,7 +41,12 @@ for ((i=0;i<60;i++)); do
 done
 curl --silent --fail "http://127.0.0.1:$auth_port/health" >/dev/null
 docker exec -i "$database" psql -U postgres -v ON_ERROR_STOP=1 < tests/auth-claims.sql
-for migration in supabase/migrations/*.sql; do docker exec -i "$database" psql -U postgres -v ON_ERROR_STOP=1 < "$migration"; done
+for migration in supabase/migrations/*.sql; do
+  if [[ "$migration" == *202610200004_agent.sql && ! -f supabase/migrations/202610200003_conversations.sql ]]; then
+    docker exec -i "$database" psql -U postgres -v ON_ERROR_STOP=1 < tests/historical-conversations.sql
+  fi
+  docker exec -i "$database" psql -U postgres -v ON_ERROR_STOP=1 < "$migration"
+done
 docker run -d --name "$rest" --network "$network" -p 127.0.0.1::3000 \
   -e "PGRST_DB_URI=postgres://authenticator:local-paw-test-only@$database:5432/postgres" \
   -e PGRST_DB_SCHEMAS=public -e PGRST_DB_ANON_ROLE=anon \
@@ -65,4 +70,4 @@ for ((i=0;i<30;i++)); do
   sleep 1
 done
 export PAW_BROWSER_TEST_URL=http://localhost:3100
-if ! npx --no-install playwright test; then cat "$test_tmp/app.log"; docker logs "$auth" --tail 20; exit 1; fi
+if ! npx --no-install playwright test "$@"; then cat "$test_tmp/app.log"; docker logs "$auth" --tail 20; exit 1; fi

@@ -321,6 +321,7 @@ small {
   border-radius: var(--radius);
 }
 .tabs {
+  flex-wrap: wrap;
   display: flex;
   gap: 24px;
   border-bottom: 1px solid var(--border);
@@ -510,6 +511,7 @@ summary {
   font-size: 11px;
 }
 .table-wrap {
+  position: relative;
   overflow: auto;
   border: 1px solid var(--border);
   border-radius: var(--radius-small);
@@ -870,6 +872,7 @@ pre {
     flex-wrap: wrap;
   }
   .tabs {
+    flex-wrap: wrap;
     gap: 18px;
   }
   .tabs button {
@@ -905,90 +908,273 @@ pre {
   }
 }
 
-.chat {
-  display: grid;
-  grid-template-columns: 190px minmax(0, 1fr);
-  height: min(780px, calc(100dvh - 220px));
-  min-height: 500px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  overflow: hidden;
-  background: white;
-}
-.conversation-list {
-  padding: 16px;
-  border-right: 1px solid var(--border);
-  overflow-y: auto;
-}
-.conversation-list > .row {
-  flex-wrap: wrap;
-  margin-bottom: 20px;
-  gap: 12px;
-}
-.conversation-list h2 {
-  font-size: 14px;
-}
-.conversation-list nav {
-  display: grid;
-  gap: 6px;
-}
-.conversation-list .nav-item {
-  white-space: normal;
-  overflow-wrap: anywhere;
-  text-align: left;
-}
-.chat-thread {
-  min-width: 0;
+/* A single height chain: viewport -> main -> panes -> thread -> message log. */
+.workspace-open {
+  height: var(--workspace-height, 100dvh);
   min-height: 0;
+  overflow: hidden;
+}
+.workspace-open .main-area {
   display: flex;
   flex-direction: column;
-  padding: 18px 24px;
+  height: 100%;
+}
+.workspace-open .topbar {
+  flex: none;
+}
+.workspace-content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  width: 100%;
+  padding: 20px 24px 12px;
+  overflow: hidden;
+}
+.workspace-content > .page-heading {
+  flex: none;
+  margin: 0;
   gap: 12px;
 }
-.chat-heading {
+.workspace-content h1 {
+  font-size: 24px;
+  margin: 0;
+}
+.workspace-content > .error,
+.workspace-content > .notice {
+  flex: none;
+  margin: 0;
+  max-height: 80px;
+  overflow: auto;
+}
+.workspace-settings {
+  position: relative;
+  font-size: 12px;
+}
+.workspace-settings > .row {
+  position: absolute;
+  right: 0;
+  top: 28px;
+  z-index: 6;
+  background: white;
+  padding: 12px;
+  border: 1px solid var(--border);
+  flex-wrap: wrap;
+  width: 210px;
+}
+.workspace-panes {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+  border: 1px solid var(--border);
+}
+.primary-chat,
+.primary-interface {
+  min-width: 0;
+  min-height: 0;
+}
+.primary-interface {
+  display: flex;
+  flex-direction: column;
+  container: interface / inline-size;
+}
+.interface-heading {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  flex: none;
 }
-.chat-heading h2 {
+.interface-heading h2 {
   font-size: 16px;
   margin: 0;
 }
-.chat-heading .row {
-  gap: 6px;
-  flex-wrap: wrap;
+.interface-heading button {
+  font-size: 12px;
+}
+.interface-content {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  padding: 20px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.primary-view-switch {
+  flex: none;
+  margin: 0;
+}
+.tabs button[aria-pressed="true"] {
+  color: var(--text);
+  border-bottom: 2px solid var(--text);
+}
+.developer-toggle {
+  flex: none;
+  align-self: flex-start;
+}
+.developer-panel {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+  padding: 16px 0;
+}
+.developer-panel > .muted {
+  overflow-wrap: anywhere;
+}
+.chat {
+  height: 100%;
+  min-height: 0;
+  position: relative;
+  background: white;
+}
+.chat-thread {
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+}
+.chat-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  flex: none;
+}
+.chat-heading .chat-nav-toggle {
+  justify-self: start;
+}
+.chat-heading > .row {
+  grid-row: 1;
+  grid-column: 2;
+  gap: 4px;
 }
 .chat-heading button,
 .conversation-actions summary {
   font-size: 12px;
+  padding: 8px;
+}
+.chat-model {
+  grid-row: 2;
+  grid-column: 1 / -1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.chat-model h2 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 15px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.chat-model select {
+  width: min(65%, 300px);
+  font-size: 12px;
+  padding: 8px;
+  text-overflow: ellipsis;
 }
 .conversation-actions {
   position: relative;
 }
 .conversation-actions summary {
-  cursor: pointer;
-  padding: 8px;
+  white-space: nowrap;
+}
+.conversation-actions[open] {
+  z-index: 4;
 }
 .conversation-actions button {
   display: block;
-  white-space: nowrap;
+  width: 190px;
+  border-radius: 0;
+  background: white;
 }
-.chat-nav-toggle {
-  display: none;
+.conversation-actions button:nth-of-type(1) {
+  position: absolute;
+  right: 0;
+  top: 100%;
+}
+.conversation-actions button:nth-of-type(2) {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 35px);
+}
+.chat-thread > p {
+  flex: none;
+  margin: 0;
+  font-size: 12px;
+}
+.chat-thread > .error {
+  flex: none;
+  max-height: 100px;
+  overflow: auto;
+}
+.chat-thread > .empty-state {
+  flex: 1;
+  min-height: 0;
+  border: 0;
+  overflow: auto;
+  justify-content: center;
+  padding: 16px;
 }
 .chat-messages {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
+  min-width: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
   scrollbar-gutter: stable;
   padding: 12px 4px;
+}
+.conversation-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background: #0002;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+}
+.conversation-list {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: min(320px, 95%);
+  z-index: 3;
+  background: white;
+  border-right: 1px solid var(--border);
+  padding: 16px;
+  overflow: auto;
+}
+.conversation-list > .row {
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+  gap: 10px;
+}
+.conversation-list h2 {
+  font-size: 16px;
+  margin: 0;
+}
+.conversation-list .conversation-close {
+  margin-left: auto;
+  font-size: 11px;
+  padding: 6px;
+}
+.conversation-list .nav-item {
+  overflow-wrap: anywhere;
 }
 .chat-empty {
   display: grid;
   place-items: center;
-  min-height: 220px;
+  padding: 24px 0;
 }
 .chat-message {
   max-width: 760px;
@@ -1075,6 +1261,8 @@ pre {
   overflow-wrap: anywhere;
 }
 .chat-composer {
+  flex: none;
+  gap: 8px;
   width: 100%;
   max-width: 760px;
   margin: 0 auto;
@@ -1088,7 +1276,7 @@ pre {
   border: 0;
   resize: none;
   min-height: 48px;
-  max-height: 180px;
+  max-height: min(140px, 25dvh);
   padding: 6px 0;
   background: transparent;
 }
@@ -1104,41 +1292,92 @@ pre {
 .composer-actions button {
   border-radius: 12px;
 }
-@media (max-width: 720px) {
-  .chat {
-    grid-template-columns: minmax(0, 1fr);
-    height: calc(100dvh - 390px);
-    min-height: 420px;
-    position: relative;
-  }
-  .conversation-list {
+
+/* Narrow layouts switch views; neither component unmounts. */
+@media (max-width: 1279px) {
+  .showing-chat .primary-interface,
+  .showing-interface .primary-chat {
     display: none;
   }
-  .conversation-list.drawer-open {
-    display: block;
-    position: absolute;
-    top: 58px;
-    left: 0;
-    bottom: 0;
-    width: min(280px, 85%);
-    background: white;
-    z-index: 5;
-    border-right: 1px solid var(--border);
+}
+@media (min-width: 1280px) {
+  .primary-view-switch {
+    display: none;
   }
-  .chat-nav-toggle {
-    display: block;
+  .workspace-panes {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
+  .primary-interface {
+    border-left: 1px solid var(--border);
+  }
+}
+.workspace-panes.interface-expanded {
+  grid-template-columns: minmax(0, 1fr);
+}
+.interface-expanded .primary-chat {
+  display: none;
+}
+.interface-expanded .primary-interface {
+  display: flex;
+  border-left: 0;
+}
+@media (max-width: 1024px) {
+  .workspace-open {
+    flex-direction: column;
+  }
+  .workspace-open .sidebar {
+    position: static;
+    flex: none;
+    width: 100%;
+    padding: 8px 16px;
+    flex-direction: row;
+    align-items: center;
+    gap: 16px;
+  }
+  .workspace-open .sidebar .brand {
+    margin: 0;
+    padding: 0;
+    font-size: 16px;
+  }
+  .workspace-open .sidebar-label,
+  .workspace-open .sidebar nav,
+  .workspace-open .sidebar-bottom {
+    display: none;
+  }
+  .workspace-open .sidebar > .nav-item {
+    width: auto;
+    margin: 0;
+    padding: 6px;
+  }
+  .workspace-open .main-area {
+    flex: 1;
+    min-height: 0;
+    margin: 0;
+    width: 100%;
+  }
+  .workspace-open .topbar {
+    padding: 8px 16px;
+    min-height: 44px;
+  }
+  .workspace-content {
+    padding: 12px 16px;
+    gap: 8px;
+  }
+  .workspace-content > .page-heading {
+    flex-direction: row;
+    align-items: center;
+  }
+  .workspace-content h1 {
+    font-size: 20px;
+  }
+  .workspace-content .tabs button {
+    padding: 8px 0;
+  }
+}
+@media (max-width: 480px) {
   .chat-thread {
-    padding: 12px;
-  }
-  .chat-heading h2 {
-    font-size: 14px;
-  }
-  .chat-heading {
-    gap: 6px;
-  }
-  .chat-message.user {
-    max-width: 90%;
+    padding: 10px;
+    gap: 8px;
   }
   .composer-actions span {
     display: none;
@@ -1146,96 +1385,127 @@ pre {
   .composer-actions {
     justify-content: flex-end;
   }
-  .chat-heading .row {
-    gap: 2px;
+  .workspace-content {
+    padding: 10px;
+  }
+  .workspace-content h1 {
+    font-size: 18px;
+  }
+  .workspace-settings summary {
+    font-size: 11px;
+  }
+  .interface-content {
+    padding: 12px;
+  }
+  .modal-backdrop {
+    padding: 10px;
+  }
+  .modal {
+    padding: 20px;
+    max-height: calc(var(--workspace-height, 100dvh) - 20px);
+  }
+  .chat-message.user {
+    max-width: 92%;
   }
 }
-
-/* Chat creates software; the adjacent live surface operates it. */
-.workspace-panes {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  border: 1px solid var(--border, #e5e5e5);
-  min-height: 65dvh;
+/* Persistent UI responds to its actual pane, including expanded mode. */
+.primary-interface .a2ui-runtime,
+.primary-interface [data-a2ui-component],
+.primary-interface a2ui-react-host,
+.primary-interface .surface {
+  max-width: 100%;
 }
-.primary-chat,
-.primary-interface {
+.a2ui-row > * {
+  flex: 1 1 220px;
   min-width: 0;
+  max-width: 100%;
 }
-.primary-interface {
-  padding: 24px;
-  border-left: 1px solid var(--border, #e5e5e5);
-  overflow: auto;
+.record-fields {
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
 }
-.primary-interface > h2 {
-  margin-bottom: 24px;
+.record-cards {
+  grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr));
 }
-.workspace-panes .chat {
-  display: block;
-  border: 0;
-  min-height: 65dvh;
-  position: relative;
-}
-.workspace-panes .conversation-list {
-  display: none;
-}
-.workspace-panes .conversation-list.drawer-open {
-  display: block;
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: min(280px, 90%);
-  background: white;
-  z-index: 5;
-  border-right: 1px solid #e5e5e5;
-}
-.workspace-panes .chat-nav-toggle {
-  display: inline-flex;
-}
-.workspace-panes .chat-heading {
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.workspace-panes .chat-thread {
-  min-height: 65dvh;
-}
-.primary-view-switch {
-  display: none;
-}
-.developer-toggle {
-  margin: 20px 0;
-}
-@media (max-width: 800px) {
-  .workspace-panes {
-    display: block;
-  }
-  .primary-view-switch {
-    display: flex;
-  }
-  .showing-chat .primary-interface,
-  .showing-interface .primary-chat {
-    display: none;
-  }
-  .primary-interface {
-    border-left: 0;
-    min-height: 60dvh;
+@container interface (max-width: 620px) {
+  .surface {
     padding: 16px;
   }
-  .workspace-panes .chat-thread {
-    min-height: 60dvh;
+  .data-toolbar,
+  .filter-form,
+  .sort-controls {
+    flex-wrap: wrap;
   }
-  .workspace-panes .chat-composer {
-    position: sticky;
-    bottom: 0;
-    background: white;
-    padding-bottom: max(12px, env(safe-area-inset-bottom));
+  .data-toolbar {
+    align-items: flex-start;
+  }
+  .filter-form {
+    flex: 1 1 100%;
+  }
+  .filter-form input,
+  .filter-form select {
+    flex: 1 1 120px;
+    width: auto;
+  }
+  .chart-row {
+    gap: 8px;
+  }
+  .chart-row > span {
+    width: 80px;
   }
 }
-/* Expanded conversation navigation stays in flow so its toggle remains reachable. */
-.workspace-panes .conversation-list.drawer-open {
-  position: static;
-  width: auto;
-  max-height: 240px;
-  overflow: auto;
-  border-right: 0;
-  border-bottom: 1px solid var(--border);
+@container interface (min-width: 900px) {
+  .surface {
+    padding: 24px;
+  }
+  .record-fields {
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  }
+}
+[hidden] {
+  display: none !important;
+}
+
+/* Tables become labelled rows when the pane is too narrow for columns. */
+@container interface (max-width: 460px) {
+  .table-wrap table {
+    min-width: 0;
+  }
+  .table-wrap thead {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .table-wrap tbody,
+  .table-wrap tr {
+    display: block;
+    width: 100%;
+  }
+  .table-wrap tr {
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .table-wrap tr:last-child {
+    border-bottom: 0;
+  }
+  .table-wrap td {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 6px 12px;
+    border: 0;
+    max-width: none;
+  }
+  .table-wrap td::before {
+    content: attr(data-label);
+    flex: 0 0 72px;
+    font-size: 12px;
+    color: var(--secondary);
+  }
+  .table-wrap td > .row {
+    flex-wrap: wrap;
+  }
 }

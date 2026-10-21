@@ -20,6 +20,9 @@ for ((i=0;i<60;i++)); do
 done
 docker exec -i "$database" psql -U postgres -v ON_ERROR_STOP=1 < tests/bootstrap.sql
 for migration in supabase/migrations/*.sql; do
+  if [[ "$migration" == *202610200004_agent.sql && ! -f supabase/migrations/202610200003_conversations.sql ]]; then
+    docker exec -i "$database" psql -U postgres -v ON_ERROR_STOP=1 < tests/historical-conversations.sql
+  fi
   docker exec -i "$database" psql -U postgres -v ON_ERROR_STOP=1 < "$migration"
   if [[ "$migration" == *202610200004_agent.sql ]]; then
     docker exec -i "$database" psql -U postgres -v ON_ERROR_STOP=1 < tests/provider-legacy.sql

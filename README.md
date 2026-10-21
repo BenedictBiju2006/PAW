@@ -410,7 +410,7 @@ adapters, display/configuration metadata, models, and metadata validation. Defau
 | Provider          | Server variable     | Default models                                 |
 | ----------------- | ------------------- | ---------------------------------------------- |
 | OpenAI            | `PAW_OPENAI_MODELS` | `gpt-4.1-mini,gpt-4.1`                         |
-| Gemini (`google`) | `PAW_GOOGLE_MODELS` | `gemini-2.5-flash,gemini-2.5-pro`              |
+| Gemini (`google`) | `PAW_GOOGLE_MODELS` | `gemini-3.8-flash,gemini-3.5-flash-lite`       |
 | Groq              | `PAW_GROQ_MODELS`   | `llama-3.3-70b-versatile,llama-3.1-8b-instant` |
 
 These are small tool-capable allowlists based on the official
@@ -470,3 +470,58 @@ plan-specific quota and model access) must be exercised manually with user keys;
 mocked tests do not establish live-provider reliability. Deploy the migration and
 server configuration before production acceptance. No hosted database migration
 is performed by committing this code.
+
+## Gemini compatibility and layout hotfix
+
+The Gemini defaults are now `gemini-3.8-flash` and `gemini-3.5-flash-lite`, verified
+against Google's official [3.8 Flash](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash)
+and [3.5 Flash-Lite](https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite)
+model pages, which list function calling support. `PAW_GOOGLE_MODELS` remains an
+explicit server allowlist override. Existing stored 2.5 selections and ciphertext
+are not rewritten. With the default list, an already-saved 2.5 model remains
+available for projects that retain access; it is not offered as a new default.
+An explicit environment override remains authoritative, including excluding old
+models. No provider or model is silently substituted.
+
+Google model-metadata checks cannot prove inference or project eligibility.
+**Validate & save** makes a metadata-only GET, never an inference request; the
+response explicitly reports `inferenceVerified: false`. Inference access and quota
+are checked by Google when the user sends a message, which may incur charges.
+Errors distinguish invalid credentials, missing models, project/model access
+restrictions, unsupported tool calling, rate limits/quota, and outages, without
+showing upstream private diagnostics. For a restricted model, select a replacement
+in AI settings and leave the API key blank to reuse the encrypted saved key.
+Failed validation preserves the previous key/model and other providers.
+
+The workspace now has one viewport-to-pane height chain. Chat and Interface split
+at **1280px and above**; smaller screens switch views. Messages and the Interface
+content scroll independently while the composer remains available. The
+conversation drawer overlays Chat with its own close control and Escape handling;
+it does not move the message log or composer. Navigation includes visible active
+states. Developer Tools opens in the workspace area, with its own scrolling,
+while the mounted Chat and Interface retain their state and streaming callbacks.
+
+The Interface pane is a CSS size container for its generated UI. **Expand
+interface** gives it the workspace width; **Restore interface** returns to the
+normal split/view. Forms, rows, toolbars and charts adapt to the actual pane width.
+Narrow tables become labelled rows with visible record actions. Expansion and
+view switches retain drafts, rendered UI state, and in-flight responses. The
+shared agent, updated main-branch prompt, tool discovery/execution, authorization,
+conversation persistence, and official A2UI runtime are unchanged.
+
+No production migration is added, modified, or reapplied for this hotfix. The
+conversations migration is already applied on the hosted database. Because its
+file is absent on current main, disposable test runners use
+`tests/historical-conversations.sql` at the historical schema boundary. This is a
+test-only snapshot; **never run it on the hosted database**.
+
+The five standard verification commands still apply. `test:browser` now includes
+rendered Playwright audits at **390, 768, 1024, 1440 and 1920px**, plus a short
+viewport check for keyboard space. Screenshots cover short/long conversations,
+expanded tools, empty/populated interfaces, pane expansion, navigation, model
+selection, AI Settings, and both Developer Tools views. By default screenshots
+are saved in ignored `work/visual/`; override with `PAW_VISUAL_OUTPUT_DIR`.
+Assertions check document overflow, message-log height, composer placement, stable
+drawer geometry, visible narrow-table actions, draft retention and streaming
+refresh while Chat is hidden. These are rendered local tests, not live Google
+inference or real mobile-keyboard/device acceptance.

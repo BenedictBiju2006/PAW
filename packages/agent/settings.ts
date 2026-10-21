@@ -86,11 +86,14 @@ export class ProviderSettingsService {
       model:
         preference?.model ??
         row?.model ??
-        providerModels(provider, this.env)[0] ??
+        providerModels(provider, this.env, row?.model)[0] ??
         "",
-      models: providerModels(provider, this.env),
+      models: providerModels(provider, this.env, row?.model),
       tokenWarning: row?.token_warning ?? 100000,
-      providers: providerCatalog(this.env).map((p) => {
+      providers: providerCatalog(
+        this.env,
+        Object.fromEntries(rows.map((r) => [r.provider, r.model])),
+      ).map((p) => {
         const saved = rows.find((r) => r.provider === p.id);
         return {
           ...p,
@@ -118,8 +121,8 @@ export class ProviderSettingsService {
       })
       .strict()
       .parse(input);
-    validateModel(a.provider, a.model, this.env);
     const previous = await this.read(a.provider);
+    validateModel(a.provider, a.model, this.env, previous?.model);
     const key =
       a.apiKey ??
       (previous
@@ -131,36 +134,38 @@ export class ProviderSettingsService {
           )
         : undefined);
     if (!key) throw new ServiceError("Add this provider's API key.");
-    await validateProviderKey(a.provider, a.model, key, this.request);
-    checked(
-      await this.admin
-        .from("provider_settings")
-        .upsert(
-          {
-            user_id: this.actor,
-            provider: a.provider,
-            model: a.model,
-            credential: encryptCredential(
-              key,
-              this.actor,
-              this.env,
-              a.provider,
-            ),
-            token_warning: a.tokenWarning,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "user_id,provider" },
-        ),
+    const validation = await validateProviderKey(
+      a.provider,
+      a.model,
+      key,
+      this.request,
     );
-    return this.select({ provider: a.provider, model: a.model });
+    checked(
+      await this.admin.from("provider_settings").upsert(
+        {
+          user_id: this.actor,
+          provider: a.provider,
+          model: a.model,
+          credential: encryptCredential(key, this.actor, this.env, a.provider),
+          token_warning: a.tokenWarning,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "user_id,provider" },
+      ),
+    );
+    return {
+      ...(await this.select({ provider: a.provider, model: a.model })),
+      validation,
+    };
   }
   async select(input: unknown) {
     const a = z
       .object({ provider: providerId, model: z.string().min(1).max(100) })
       .strict()
       .parse(input);
-    validateModel(a.provider, a.model, this.env);
-    if (!(await this.read(a.provider)))
+    const saved = await this.read(a.provider);
+    validateModel(a.provider, a.model, this.env, saved?.model);
+    if (!saved)
       throw new ServiceError(
         "Add this provider's API key in AI settings first.",
       );
@@ -184,7 +189,7 @@ export class ProviderSettingsService {
         400,
       );
     const model = preference?.model ?? row.model;
-    validateModel(provider, model, this.env);
+    validateModel(provider, model, this.env, row.model);
     return {
       provider,
       model: model as string,

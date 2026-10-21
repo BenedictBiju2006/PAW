@@ -44,11 +44,24 @@ export function providerError(
   if (/API_KEY_INVALID|API_KEY_EXPIRED|invalid_api_key/i.test(body))
     return `${provider} rejected the API credentials. Replace this provider's key in AI settings.`;
   if (/model_not_found|model_decommissioned/i.test(body))
-    return `${provider} model unavailable. Choose another enabled model in AI settings.`;
-  if (code === 401 || code === 403)
-    return `${provider} rejected the credentials or model permission. Validate or replace this provider's key in AI settings.`;
+    return `${provider} model unavailable or not found for this API version/project. Choose another enabled model in AI settings using your saved key.`;
+  if (code === 401)
+    return `${provider} rejected the API credentials. Validate or replace this provider's key in AI settings.`;
+  if (
+    code === 403 ||
+    /MODEL_ACCESS_DENIED|MODEL_RESTRICTED|not available (?:for|to) (?:new|your)|new (?:projects|users)|does not have access|access (?:is )?restricted/i.test(
+      body,
+    )
+  )
+    return `${provider} model access is restricted for this project or account. Choose a replacement model in AI settings using your saved key, or check provider project permissions. No provider was switched.`;
+  if (
+    /function calling.{0,60}(?:not supported|unsupported)|(?:not support|unsupported).{0,60}(?:function calling|tools)|UNSUPPORTED_TOOL/i.test(
+      body,
+    )
+  )
+    return `${provider} model does not support the required structured tool calling. Choose a tool-capable replacement model using your saved key.`;
   if (code === 404)
-    return `${provider} model unavailable. Choose another enabled model in AI settings.`;
+    return `${provider} model unavailable or not found for this API version/project. Choose another enabled model in AI settings using your saved key.`;
   if (code === 429) {
     const quota =
       /insufficient_quota|quota_exceeded|billing_hard_limit_reached/i.test(
