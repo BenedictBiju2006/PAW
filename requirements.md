@@ -33,7 +33,7 @@ Model-agnostic architecture is an MVP requirement; fully working Anthropic/Googl
 
 ## 2. Core domain concepts
 
-- **Workspace:** Primary persistent entity with one active mutable interface, scoped structured data, and any number of conversations. A workspace *is* the application, not a folder of separate applications.
+- **Workspace:** Primary persistent entity with one active mutable interface, scoped structured data, and any number of conversations. A workspace _is_ the application, not a folder of separate applications.
 - **Interface:** Versioned declarative representation of the workspace UI. May contain multiple pages, tabs, or sections; remains uniquely tied to its workspace.
 - **Collection:** Workspace-scoped schema for structured data.
 - **Record:** Stored entry belonging to a collection.
@@ -101,11 +101,11 @@ An agent should explore the system rather than receive its full structure upfron
 
 Bootstrap tools (or equivalent operations):
 
-| Tool | Purpose |
-| --- | --- |
-| `search_tools` | Search capabilities by task, intent, or keyword. |
-| `describe_tool` | Retrieve a selected tool's full schema and behavior. |
-| `list_resources` | Discover resources accessible in the current scope. |
+| Tool               | Purpose                                                                  |
+| ------------------ | ------------------------------------------------------------------------ |
+| `search_tools`     | Search capabilities by task, intent, or keyword.                         |
+| `describe_tool`    | Retrieve a selected tool's full schema and behavior.                     |
+| `list_resources`   | Discover resources accessible in the current scope.                      |
 | `inspect_resource` | Inspect resource metadata, schema, relationships, and supported actions. |
 
 - Supply a minimal system instruction describing exploration, safety rules, and tool-use conventions.
@@ -259,50 +259,36 @@ Keep the bootstrap prompt small. Give the agent capability discovery and workspa
 
 ## 5. Technical stack and repository
 
-| Area | Initial choice |
-| --- | --- |
-| Web application | Next.js (App Router) + React + TypeScript |
-| Server/API | Next.js server route handlers / server-side services (Node.js runtime where required) |
-| User authentication | Supabase Auth |
-| Persistent database | Supabase PostgreSQL, with RLS |
-| Optional file storage | Supabase Storage (only if files enter MVP scope) |
-| Model abstraction | Vercel AI SDK |
-| First model provider | OpenAI Responses API (per-user API key) |
-| Tool interoperability | MCP TypeScript SDK / compatible adapters |
-| Validation | Zod + JSON Schema |
-| UI rendering | Trusted declarative React component registry; evaluate A2UI |
-| Client/server communication | Authenticated HTTPS endpoints and streaming responses |
-| Deployment | Hosted Next.js web app + Supabase project; maintain local development environment |
+| Area                        | Initial choice                                                                        |
+| --------------------------- | ------------------------------------------------------------------------------------- |
+| Web application             | Next.js (App Router) + React + TypeScript                                             |
+| Server/API                  | Next.js server route handlers / server-side services (Node.js runtime where required) |
+| User authentication         | Supabase Auth                                                                         |
+| Persistent database         | Supabase PostgreSQL, with RLS                                                         |
+| Optional file storage       | Supabase Storage (only if files enter MVP scope)                                      |
+| Model abstraction           | Vercel AI SDK                                                                         |
+| First model provider        | OpenAI Responses API (per-user API key)                                               |
+| Tool interoperability       | MCP TypeScript SDK / compatible adapters                                              |
+| Validation                  | Zod + JSON Schema                                                                     |
+| UI rendering                | Trusted declarative React component registry; evaluate A2UI                           |
+| Client/server communication | Authenticated HTTPS endpoints and streaming responses                                 |
+| Deployment                  | Hosted Next.js web app + Supabase project; maintain local development environment     |
 
 ```text
 paw/
-├── apps/
-│   └── web/
-│       ├── app/
-│       │   ├── (auth)/
-│       │   ├── (workspaces)/
-│       │   └── api/
-│       └── components/
-├── packages/
-│   ├── core/
-│   │   ├── workspace/
-│   │   ├── data/
-│   │   ├── interface/
-│   │   └── actions/
-│   ├── agent/
-│   │   ├── orchestrator/
-│   │   ├── providers/
-│   │   └── context/
-│   ├── tools/
-│   │   ├── registry/
-│   │   ├── discovery/
-│   │   └── execution/
-│   ├── mcp/
-│   ├── ui-runtime/
-│   └── storage/
-└── supabase/
-    └── migrations/
+├── apps/web/
+│   ├── app/                 # Thin Next.js route/page entrypoints
+│   └── src/
+│       ├── features/        # Auth, Workspaces, Collections, Interfaces,
+│       │                    # Chat, Agent, Providers, Tooling
+│       ├── composition/     # Authenticated runtime and registry assembly
+│       └── shared/          # Neutral database/HTTP/UI primitives
+├── tests/                   # Unit contracts, integration, browser workflows
+├── scripts/
+└── supabase/migrations/     # Existing deployment schema and RLS
 ```
+
+See [docs/architecture.md](docs/architecture.md) for current feature ownership, public contracts, and dependency boundaries. The product requirements below retain their milestone history.
 
 Initial tables: `workspaces`, `collections`, `records`, `conversations`, `messages`, `operations`, `interface_revisions`, and optionally `provider_credentials` (encrypted). Use Supabase Auth's managed users rather than duplicating identity records unnecessarily. Each workspace is owned by an authenticated user; use `user_id`/`workspace_id` scoping, appropriate foreign keys, and RLS policies.
 
