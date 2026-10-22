@@ -38,11 +38,17 @@ export class ConversationService {
     title: unknown = "New conversation",
   ): Promise<Conversation> {
     await this.workspaces.workspace(workspaceId);
+    const parsed = name.parse(title);
     return required(
       checked(
         await this.db
           .from("conversations")
-          .insert({ workspace_id: workspaceId, title: name.parse(title) })
+          .insert({
+            workspace_id: workspaceId,
+            title: parsed,
+            title_origin: parsed === "New conversation" ? "default" : "manual",
+            title_attempted: parsed !== "New conversation",
+          })
           .select("*")
           .single(),
       ),
@@ -55,7 +61,7 @@ export class ConversationService {
       .from("conversations")
       .select("*", { count: "exact" })
       .eq("workspace_id", workspaceId)
-      .order("created_at")
+      .order("updated_at", { ascending: false })
       .order("id")
       .range(offset, offset + limit - 1)
       .returns<Conversation[]>();

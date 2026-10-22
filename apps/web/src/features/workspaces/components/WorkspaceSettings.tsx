@@ -6,7 +6,9 @@ export function WorkspaceSettings({ model }: { model: WorkspaceController }) {
   if (!active) return null;
   return (
     <details className="workspace-settings">
-      <summary>Workspace settings</summary>
+      <summary aria-label="Workspace settings" title="Workspace settings">
+        ⋯
+      </summary>
       <div className="row">
         <button onClick={() => setRenaming(true)}>Rename</button>
         <button

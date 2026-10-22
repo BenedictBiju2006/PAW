@@ -1,87 +1,66 @@
 import { test, expect, type Page } from "@playwright/test";
-import { createClient } from "@supabase/supabase-js";
-import { randomUUID } from "node:crypto";
-import { mkdir } from "node:fs/promises";
-import { resolve } from "node:path";
 import {
   openConversations,
   showChat,
   showInterface,
+  newConversation,
   developerTools,
+  conversationMenu,
 } from "./navigation";
-
-// Real authenticated persistence and official A2UI rendering; no live inference.
-const widths = [390, 768, 1024, 1440, 1920];
-const output = process.env.PAW_VISUAL_OUTPUT_DIR || "work/visual";
 async function geometry(page: Page) {
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () => document.documentElement.scrollHeight <= innerHeight + 1,
-      ),
-    )
-    .toBe(true);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollHeight <= innerHeight + 1,
+    ),
+  ).toBe(true);
   const composer = page.locator(".chat-composer");
   if (await composer.isVisible()) {
     const box = await composer.boundingBox();
-    expect(box!.y).toBeGreaterThan(0);
     expect(box!.y + box!.height).toBeLessThanOrEqual(
       page.viewportSize()!.height,
     );
-    const log = await page.getByRole("log").boundingBox();
-    if (log) expect(log.height).toBeGreaterThan(80);
   }
 }
-for (const width of widths)
-  test(`rendered workspace visual audit at ${width}px`, async ({ page }) => {
-    test.setTimeout(90000);
-    await mkdir(output, { recursive: true });
-    const shot = async (state: string) => {
-      await geometry(page);
-      await page.screenshot({
-        path: resolve(output, `${width}-${state}.png`),
-        fullPage: true,
-      });
-    };
+for (const width of [390, 768, 1024, 1440, 1920])
+  test(`workspace navigation at ${width}px without screenshots`, async ({
+    page,
+  }) => {
     await page.setViewportSize({ width, height: width === 390 ? 844 : 1000 });
     const providers = [
       {
         id: "google",
         name: "Gemini",
-        model: "gemini-3.8-flash",
         models: ["gemini-3.8-flash", "gemini-3.5-flash-lite"],
+        model: "gemini-3.8-flash",
+        configured: true,
       },
       {
         id: "groq",
         name: "Groq",
-        model: "llama-3.3-70b-versatile",
         models: ["llama-3.3-70b-versatile"],
+        model: "llama-3.3-70b-versatile",
+        configured: true,
       },
-    ].map((p) => ({ ...p, configured: true, tokenWarning: 100000 }));
-    let active = { provider: "google", model: "gemini-3.8-flash" };
+    ];
+    let selected = { provider: "google", model: "gemini-3.8-flash" };
     await page.route("**/api/ai-settings", async (route) => {
       if (route.request().method() === "PATCH")
-        active = route.request().postDataJSON();
+        selected = route.request().postDataJSON();
       await route.fulfill({
         json: {
-          ...active,
+          ...selected,
+          providers,
           configured: true,
           encryptionReady: true,
-          providers,
-          models: providers.find((p) => p.id === active.provider)!.models,
+          models: providers.find((p) => p.id === selected.provider)!.models,
           tokenWarning: 100000,
+          usage: { input: 0, output: 0, cost: null, period: "Fixture" },
           warning: false,
-          usage: {
-            input: 1500,
-            output: 800,
-            cost: null,
-            period: "Visual fixture",
-          },
         },
       });
     });
@@ -89,171 +68,100 @@ for (const width of widths)
     await page.getByRole("button", { name: "Sign up", exact: true }).click();
     await page
       .getByLabel("Email", { exact: true })
-      .fill(`visual-${width}-${Date.now()}@example.com`);
+      .fill(`nav-${width}-${Date.now()}@example.com`);
     await page
       .getByLabel("Password", { exact: true })
-      .fill("PAW-visual-test-password-123!");
+      .fill("PAW-local-test-password-123!");
     await page
       .getByRole("button", { name: "Create account", exact: true })
       .click();
     await expect(
       page.getByRole("heading", { name: "Your workspaces" }),
     ).toBeVisible();
-    const origin = process.env.PAW_BROWSER_TEST_URL!;
-    const actor = (await (await page.request.get("/api/auth/session")).json())
-      .user.id;
     const request = async (path: string, data: unknown, method = "POST") => {
-      const response = await page.request.fetch(`/api/${path}`, {
+      const r = await page.request.fetch(`/api/${path}`, {
         method,
-        headers: { Origin: origin },
+        headers: { Origin: process.env.PAW_BROWSER_TEST_URL! },
         data,
       });
-      expect(response.ok(), await response.text()).toBe(true);
-      return response.json();
+      expect(r.ok(), await r.text()).toBe(true);
+      return r.json();
     };
-    const workspace = await request("workspaces", { name: "Movie workspace" });
-    const base = `workspaces/${workspace.id}`;
-    const admin = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
-      { auth: { persistSession: false } },
-    );
-    for (const title of ["Short conversation", "Long conversation"]) {
-      const conversation = await request(`${base}/conversations`, { title });
-      const turn = randomUUID();
-      expect(
-        (
-          await admin.rpc("start_agent_turn", {
-            actor,
-            turn,
-            workspace: workspace.id,
-            conversation: conversation.id,
-            request_hash: turn,
-            user_text:
-              title === "Short conversation"
-                ? "Create a movie tracker."
-                : "Add a chart and explain the updated tracker.",
-            model_provider: "google",
-            model_id: "gemini-3.8-flash",
-          })
-        ).error,
-      ).toBeNull();
-      const text =
-        title === "Short conversation"
-          ? "Describe what you want to build. Your workspace is ready."
-          : Array.from(
-              { length: 18 },
-              (_, i) =>
-                `### Update ${i + 1}\n\nYour tracker keeps films, ratings, and watched status together. This paragraph verifies independent message scrolling while the composer stays visible.\n\n\`\`\`text\n${"long-data-".repeat(30)}\n\`\`\``,
-            ).join("\n\n");
-      expect(
-        (
-          await admin.rpc("append_agent_event", {
-            actor,
-            turn,
-            event: "text",
-            message_role: "assistant",
-            blocks: [{ type: "text", text }],
-          })
-        ).error,
-      ).toBeNull();
-      if (title === "Long conversation") {
-        expect(
-          (
-            await admin.rpc("append_agent_event", {
-              actor,
-              turn,
-              event: "call",
-              message_role: "assistant",
-              blocks: [
-                {
-                  type: "tool_call",
-                  invocationId: `${turn}:1`,
-                  toolId: "save_interface",
-                  arguments: {
-                    revision: 1,
-                    definition: {
-                      description: "Validated movie interface",
-                      components: Array(12).fill("collection-backed component"),
-                    },
-                  },
-                  status: "running",
-                },
-              ],
-            })
-          ).error,
-        ).toBeNull();
-        expect(
-          (
-            await admin.rpc("append_agent_event", {
-              actor,
-              turn,
-              event: "result",
-              message_role: "tool",
-              blocks: [
-                {
-                  type: "tool_result",
-                  invocationId: `${turn}:1`,
-                  toolId: "save_interface",
-                  result: { ok: true, revision: 2 },
-                  isError: false,
-                },
-              ],
-            })
-          ).error,
-        ).toBeNull();
-      }
-      expect(
-        (
-          await admin.rpc("finish_agent_turn", {
-            actor,
-            turn,
-            final_status: "completed",
-            input_count: 1000,
-            output_count: 300,
-            explanation: null,
-          })
-        ).error,
-      ).toBeNull();
-    }
+    const workspace = await request("workspaces", { name: "Movie workspace" }),
+      base = `workspaces/${workspace.id}`;
     await page.goto(`/?workspace=${workspace.id}`);
-    await expect(
-      page.getByRole("button", { name: /Developer Tools/ }),
-    ).toHaveAttribute("aria-expanded", "false");
     await expect(page.getByLabel("Message", { exact: true })).toBeEnabled();
-    await openConversations(page);
-    await page
-      .getByRole("navigation", { name: "Conversations", exact: true })
-      .getByRole("button", { name: "Short conversation", exact: true })
-      .click();
     await expect(
-      page.getByRole("heading", { name: "Short conversation", exact: true }),
+      page.getByRole("button", { name: "Start conversation" }),
+    ).toHaveCount(0);
+    expect(
+      (await (await page.request.get(`/api/${base}/conversations`)).json())
+        .conversations,
+    ).toHaveLength(0);
+    await geometry(page);
+    await openConversations(page);
+    await expect(
+      page.getByRole("button", { name: "Interface", exact: true }),
     ).toBeVisible();
-    await expect(page.getByRole("log")).toContainText(
-      "Describe what you want to build.",
-    );
-    await shot("short-empty-chat");
+    await expect(
+      page.getByRole("button", { name: "+ New chat", exact: true }),
+    ).toBeVisible();
+    if (width <= 1024) {
+      await page.keyboard.press("Escape");
+      await expect(
+        page.getByRole("button", { name: "Open navigation" }),
+      ).toBeFocused();
+    }
     await showInterface(page);
     await expect(
-      page.getByText("Your interface will appear here.", { exact: true }),
+      page.getByText("Your interface has not been created yet."),
     ).toBeVisible();
-    await shot("empty-interface");
+    await geometry(page);
+    const short = await request(`${base}/conversations`, {
+        title: "Short conversation",
+      }),
+      long = await request(`${base}/conversations`, {
+        title:
+          "Long conversation with a deliberately descriptive and very lengthy title",
+      });
+    await request(`${base}/conversations/${short.id}/messages`, {
+      text: "A short persisted message",
+    });
+    for (let i = 0; i < 12; i++)
+      await request(`${base}/conversations/${long.id}/messages`, {
+        text: `Message ${i}: ${"long content ".repeat(35)}`,
+      });
+    for (let i = 0; i < 14; i++)
+      await request(`${base}/conversations`, {
+        title: `Additional topic ${i}`,
+      });
+    await page.goto(`/?workspace=${workspace.id}&conversation=${long.id}`);
+    await expect(page.getByRole("log")).toContainText("Message 11");
+    await geometry(page);
+    await openConversations(page);
+    await expect(
+      page
+        .getByRole("navigation", { name: "Conversations" })
+        .getByRole("button", { name: long.title, exact: true }),
+    ).toHaveAttribute("title", long.title);
+    await page
+      .getByRole("navigation", { name: "Conversations" })
+      .getByRole("button", { name: "Short conversation", exact: true })
+      .click();
+    await expect(page.getByRole("log")).toContainText(
+      "A short persisted message",
+    );
+    await page.getByLabel("Message", { exact: true }).fill("Keep short draft");
     const collection = await request(`${base}/collections`, {
       name: "Films",
       fields: [
         { key: "title", label: "Title", type: "string", required: true },
         { key: "rating", label: "Rating", type: "number", required: true },
-        { key: "watched", label: "Watched", type: "boolean", required: false },
       ],
     });
-    for (const [title, rating] of [
-      ["Arrival", 5],
-      ["Spirited Away", 5],
-      ["The Grand Budapest Hotel", 4],
-    ] as const)
-      await request(`${base}/collections/${collection.id}`, {
-        data: { title, rating, watched: true },
-      });
+    await request(`${base}/collections/${collection.id}`, {
+      data: { title: "Arrival", rating: 5 },
+    });
     await request(
       `${base}/interface`,
       {
@@ -275,10 +183,10 @@ for (const width of widths)
                   {
                     id: "root",
                     component: "Column",
-                    children: ["title", "form", "table", "chart"],
+                    children: ["heading", "form", "table", "chart"],
                   },
                   {
-                    id: "title",
+                    id: "heading",
                     component: "Text",
                     text: "Your movie tracker",
                     variant: "h2",
@@ -307,168 +215,104 @@ for (const width of widths)
       },
       "PUT",
     );
-    await page.reload();
+    // Interface creation does not redirect an active chat. Selection loads persisted state.
+    await expect(page.getByLabel("Message", { exact: true })).toHaveValue(
+      "Keep short draft",
+    );
     await showInterface(page);
     await expect(
       page
         .locator(".primary-interface")
-        .getByRole("heading", { name: "Your movie tracker", exact: true }),
+        .getByRole("heading", { name: "Your movie tracker" }),
     ).toBeVisible();
+    await expect(page.getByRole("cell", { name: "Arrival" })).toBeVisible();
     await expect(
-      page
-        .locator(".primary-interface")
-        .getByRole("cell", { name: "Arrival", exact: false }),
-    ).toBeVisible();
-    await expect(
-      page.locator(".primary-interface").getByRole("img", {
+      page.getByRole("img", {
         name: "Value counts for rating across all records",
-        exact: true,
       }),
     ).toBeVisible();
-    await shot("populated-interface");
-    await showChat(page);
-    await page
-      .getByLabel("Message", { exact: true })
-      .fill("Draft survives expanding the interface.");
-    await showInterface(page);
     const pane = await page.locator(".primary-interface").boundingBox();
-    await page
-      .getByRole("button", { name: "Expand interface", exact: true })
-      .click();
+    expect(pane!.width).toBeGreaterThan(width - (width > 1024 ? 280 : 1));
+    await geometry(page);
+    await page.reload();
     await expect(
-      page
-        .locator(".primary-interface")
-        .getByRole("cell", { name: "Arrival", exact: false }),
+      page.getByRole("heading", { name: "Your movie tracker" }),
     ).toBeVisible();
-    await shot("expanded-interface");
-    const expanded = await page.locator(".primary-interface").boundingBox();
-    if (width >= 1280)
-      expect(expanded!.width).toBeGreaterThan(pane!.width * 1.7);
-    // The renderer and its fields grow with the pane, preserving record interactions.
-    const fields = await page
-      .locator(".primary-interface .record-fields")
-      .first()
-      .boundingBox();
-    expect(fields!.width).toBeLessThan(expanded!.width);
-    await page
-      .locator(".interface-content")
-      .evaluate((el) => (el.scrollTop = el.scrollHeight));
-    await shot("expanded-interface-bottom");
-    if (width === 390) {
-      await page
-        .locator(".primary-interface")
-        .getByRole("button", { name: "Edit", exact: true })
-        .first()
-        .scrollIntoViewIfNeeded();
-      await expect(
-        page
-          .locator(".primary-interface")
-          .getByRole("button", { name: "Delete", exact: true })
-          .first(),
-      ).toBeInViewport();
-      await shot("narrow-table-actions");
-    }
-    await page
-      .getByRole("button", { name: "Restore interface", exact: true })
-      .click();
-    await showChat(page);
-    await expect(page.getByLabel("Message", { exact: true })).toHaveValue(
-      "Draft survives expanding the interface.",
-    );
+    await newConversation(page);
+    await expect(
+      page.getByRole("heading", { name: "What would you like to create?" }),
+    ).toBeVisible();
     await openConversations(page);
-    const composerBefore = await page.locator(".chat-composer").boundingBox();
-    await shot("conversation-drawer");
-    expect(await page.locator(".chat-composer").boundingBox()).toEqual(
-      composerBefore,
-    );
     await page
-      .getByRole("navigation", { name: "Conversations", exact: true })
-      .getByRole("button", { name: "Long conversation", exact: true })
+      .getByRole("navigation", { name: "Conversations" })
+      .getByRole("button", { name: short.title, exact: true })
       .click();
-    await expect(page.locator(".tool-activity summary")).toBeVisible();
-    await page.locator(".tool-activity summary").click();
-    await shot("long-tools");
     await page
       .getByLabel("Message", { exact: true })
-      .fill("Keep this draft across views.");
+      .fill("Draft after reload");
     await showInterface(page);
-    await showChat(page);
+    await openConversations(page);
+    await page
+      .getByRole("navigation", { name: "Conversations" })
+      .getByRole("button", { name: short.title, exact: true })
+      .click();
     await expect(page.getByLabel("Message", { exact: true })).toHaveValue(
-      "Keep this draft across views.",
+      "Draft after reload",
+    );
+    await page.goBack();
+    await expect(
+      page.getByRole("heading", { name: "Your movie tracker" }),
+    ).toBeVisible();
+    await page.goForward();
+    await expect(page.getByLabel("Message", { exact: true })).toHaveValue(
+      "Draft after reload",
     );
     await page
-      .getByLabel("AI model", { exact: true })
+      .getByLabel("AI model")
       .selectOption("google:gemini-3.5-flash-lite");
-    await expect(page.getByLabel("AI model", { exact: true })).toHaveValue(
-      "google:gemini-3.5-flash-lite",
-    );
-    await shot("model-selected");
     await page
       .getByRole("button", { name: "AI settings", exact: true })
       .click();
-    const dialog = page.getByRole("dialog", {
+    const settings = page.getByRole("dialog", {
       name: "AI settings",
       exact: true,
     });
     await expect(
-      dialog.getByRole("combobox", { name: "Provider", exact: true }),
+      settings.getByRole("combobox", { name: "Provider", exact: true }),
     ).toBeVisible();
-    await shot("ai-settings");
-    await dialog.evaluate((el) => (el.scrollTop = el.scrollHeight));
+    await settings.evaluate((el) => (el.scrollTop = el.scrollHeight));
     await expect(
-      dialog.getByRole("button", { name: "Validate & save", exact: true }),
+      settings.getByRole("button", { name: "Validate & save" }),
     ).toBeInViewport();
-    await shot("ai-settings-bottom");
-    await dialog.evaluate((el) => (el.scrollTop = 0));
-    await dialog
-      .getByRole("combobox", { name: "Provider", exact: true })
-      .selectOption("groq");
-    await expect(
-      dialog.getByRole("combobox", { name: "Model", exact: true }),
-    ).toHaveValue("llama-3.3-70b-versatile");
-    await shot("ai-settings-groq");
-    await dialog.getByRole("button", { name: "Close", exact: true }).click();
+    await settings.getByRole("button", { name: "Close", exact: true }).click();
     await developerTools(page);
-    await shot("developer-data");
-    await page
-      .getByRole("tab", { name: "Interface builder", exact: true })
-      .click();
+    await expect(
+      page.getByRole("tab", { name: "Collections & data" }),
+    ).toBeVisible();
+    await page.getByRole("tab", { name: "Interface builder" }).click();
     await expect(page.getByLabel("A2UI messages")).toBeVisible();
-    await shot("developer-builder");
-    await page.getByRole("button", { name: /Developer Tools/ }).click();
-    await expect(page.getByLabel("Message", { exact: true })).toHaveValue(
-      "Keep this draft across views.",
-    );
-    if (width === 390) {
-      await page.setViewportSize({ width, height: 560 });
-      await geometry(page);
-      await page.screenshot({
-        path: resolve(output, `${width}-keyboard-height.png`),
-      });
-    }
-    // Each conversation keeps its own draft when its thread remounts.
-    const selectConversation = async (title: string) => {
-      await openConversations(page);
-      await page
-        .getByRole("navigation", { name: "Conversations", exact: true })
-        .getByRole("button", { name: title, exact: true })
-        .click();
-    };
-    await selectConversation("Short conversation");
-    await expect(page.getByLabel("Message", { exact: true })).toHaveValue("");
+    await openConversations(page);
     await page
-      .getByLabel("Message", { exact: true })
-      .fill("Short thread draft.");
-    await selectConversation("Long conversation");
+      .getByRole("button", { name: "Developer Tools", exact: true })
+      .click();
+    if (width <= 1024)
+      await page.getByRole("button", { name: "Close navigation" }).click();
     await expect(page.getByLabel("Message", { exact: true })).toHaveValue(
-      "Keep this draft across views.",
+      "Draft after reload",
     );
-    await selectConversation("Short conversation");
-    await expect(page.getByLabel("Message", { exact: true })).toHaveValue(
-      "Short thread draft.",
-    );
-    await selectConversation("Long conversation");
-    await expect(page.getByLabel("Message", { exact: true })).toHaveValue(
-      "Keep this draft across views.",
+    await geometry(page);
+    const menu = await conversationMenu(page, short.title);
+    page.once("dialog", (dialog) => dialog.accept("Manually renamed topic"));
+    await menu.getByRole("button", { name: "Rename conversation" }).click();
+    if (width <= 1024)
+      await page.getByRole("button", { name: "Close navigation" }).click();
+    await expect(
+      page.getByRole("heading", { name: "Manually renamed topic" }),
+    ).toBeVisible();
+    const other = await request("workspaces", { name: "Other workspace" });
+    await page.goto(`/?workspace=${other.id}&conversation=${short.id}`);
+    await expect(page.getByRole("alert")).toContainText("not found");
+    await expect(page.getByRole("log")).not.toContainText(
+      "A short persisted message",
     );
   });

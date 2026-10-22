@@ -1,3 +1,4 @@
+import { generateConversationTitle } from "../features/chat/server/public";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import "server-only";
 import {
@@ -19,6 +20,19 @@ function host(db: SupabaseClient, actor: string): AgentHost {
   const service = createWorkspaceServices(db, actor);
   return {
     admin: privilegedPersistence,
+    title: (workspaceId, conversationId, settings, signal) =>
+      generateConversationTitle({
+        admin: privilegedPersistence(),
+        actor,
+        workspaceId,
+        conversationId,
+        signal,
+        resolve: async () => ({
+          provider: resolveProvider(settings.provider).adapter,
+          model: settings.model,
+          apiKey: settings.apiKey,
+        }),
+      }),
     conversations: new ConversationService(db, service),
     settings: (admin, actor) =>
       new ProviderSettingsService(admin, actor).resolve(),

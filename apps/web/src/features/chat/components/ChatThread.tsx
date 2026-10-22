@@ -31,6 +31,7 @@ export function ChatThread({
     before,
     turns,
     scroll,
+    session,
     nearBottom,
     lastRequest,
     load,
@@ -77,6 +78,8 @@ export function ChatThread({
             const el = scroll.current!;
             nearBottom.current =
               el.scrollHeight - el.scrollTop - el.clientHeight < 100;
+            session.scrollTop = el.scrollTop;
+            session.nearBottom = nearBottom.current;
           }}
         >
           {before !== null && (

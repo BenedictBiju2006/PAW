@@ -46,6 +46,9 @@ export type Conversation = {
   id: string;
   workspace_id: string;
   title: string;
+  title_origin?: "default" | "generated" | "fallback" | "manual";
+  title_attempted?: boolean;
+  title_revision?: number;
   created_at: string;
   updated_at: string;
 };

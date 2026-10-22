@@ -16,6 +16,7 @@ export function WorkspaceDialogs({ model }: { model: WorkspaceController }) {
     setCollections,
     setSelectedCollection,
     setTab,
+    loadWorkspace,
     renaming,
     active,
     setRenaming,
@@ -41,11 +42,8 @@ export function WorkspaceDialogs({ model }: { model: WorkspaceController }) {
               });
               await refreshList();
               setNewWorkspace(false);
-              setActive(w);
-              window.history.replaceState(null, "", `?workspace=${w.id}`);
-              setCollections([]);
-              setSelectedCollection("");
-              setTab("workspace");
+              await loadWorkspace(w.id);
+              window.history.pushState(null, "", `/?workspace=${w.id}`);
             })
           }
         />

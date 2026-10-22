@@ -5,6 +5,7 @@ import {
   openConversations,
   developerTools,
   showInterface,
+  conversationMenu,
 } from "./navigation";
 
 test("sign up, manually configure a workspace, persist across sessions, and isolate accounts", async ({
@@ -15,7 +16,7 @@ test("sign up, manually configure a workspace, persist across sessions, and isol
   const email = `owner${suffix}@example.com`;
   const password = "PAW-local-test-password-123!";
   await page.goto("/");
-  await page.screenshot({ path: "/tmp/paw-auth-desktop.png", fullPage: true });
+
   await page.getByRole("button", { name: "Sign up", exact: true }).click();
   await page.getByLabel("Email", { exact: true }).fill(email);
   await page.getByLabel("Password", { exact: true }).fill(password);
@@ -212,7 +213,7 @@ test("sign up, manually configure a workspace, persist across sessions, and isol
     .fill("Plan my reading\nKeep the current workspace data.");
   await page.getByRole("button", { name: "Save message", exact: true }).click();
   await expect(page.getByRole("log")).toContainText("Plan my reading");
-  await page.locator(".conversation-actions summary").click();
+  await conversationMenu(page);
   page.once("dialog", (dialog) => dialog.accept("Reading plan"));
   await page
     .getByRole("button", { name: "Rename conversation", exact: true })
@@ -220,6 +221,14 @@ test("sign up, manually configure a workspace, persist across sessions, and isol
   await expect(
     page.getByRole("heading", { name: "Reading plan", exact: true }),
   ).toBeVisible();
+  const createdForDelete = await page.request.post(
+    `/api/workspaces/${new URL(page.url()).searchParams.get("workspace")}/conversations`,
+    {
+      headers: { Origin: process.env.PAW_BROWSER_TEST_URL! },
+      data: { title: "Temporary topic" },
+    },
+  );
+  expect(createdForDelete.ok()).toBe(true);
   await newConversation(page);
   await expect(
     page.getByRole("heading", {
@@ -264,6 +273,7 @@ test("sign up, manually configure a workspace, persist across sessions, and isol
   );
   expect(forged.status()).toBe(400);
   await page.reload();
+  await showInterface(page);
   await expect(
     page.getByRole("heading", { name: "Reading room", exact: true }),
   ).toBeVisible();
@@ -280,22 +290,22 @@ test("sign up, manually configure a workspace, persist across sessions, and isol
   await openConversations(page);
   await page
     .getByRole("navigation", { name: "Conversations", exact: true })
-    .getByRole("button", { name: "New conversation", exact: true })
+    .getByRole("button", { name: "Temporary topic", exact: true })
     .click();
-  await page.locator(".conversation-actions summary").click();
+  await conversationMenu(page);
   page.once("dialog", (dialog) => dialog.dismiss());
   await page
     .getByRole("button", { name: "Delete conversation", exact: true })
     .click();
   await expect(
-    page.getByRole("heading", { name: "New conversation", exact: true }),
+    page.getByRole("heading", { name: "Temporary topic", exact: true }),
   ).toBeVisible();
   page.once("dialog", (dialog) => dialog.accept());
   await page
     .getByRole("button", { name: "Delete conversation", exact: true })
     .click();
   await expect(
-    page.getByRole("heading", { name: "Reading plan", exact: true }),
+    page.getByRole("heading", { name: "New chat", exact: true }),
   ).toBeVisible();
   await developerTools(page);
   await page.getByRole("tab", { name: "Interface builder" }).click();
@@ -393,18 +403,9 @@ test("sign up, manually configure a workspace, persist across sessions, and isol
   });
   expect(csrf.status()).toBe(403);
   await second.close();
-  await page.screenshot({
-    path: "/tmp/paw-workspace-desktop.png",
-    fullPage: true,
-  });
+
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(
-    page.getByRole("heading", { name: "Reading room", exact: true }),
-  ).toBeVisible();
+  await expect(page.locator(".topbar")).toContainText("Reading room");
   await showChat(page);
   await expect(page.getByLabel("Message", { exact: true })).toBeVisible();
-  await page.screenshot({
-    path: "/tmp/paw-workspace-mobile.png",
-    fullPage: true,
-  });
 });

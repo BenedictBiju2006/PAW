@@ -1,84 +1,135 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../../../shared/http/api";
-import type { AIStatus } from "../../providers/public";
+import { useChatSessions } from "../components/ChatSessionProvider";
 import type { Conversation } from "../model/schema";
-export function useConversationNavigation(workspaceId: string) {
-  const drafts = useRef(new Map<string, string>()).current;
+export function useConversationNavigation(workspaceId: string | null) {
+  const sessions = useChatSessions();
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [next, setNext] = useState<number | null>(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const current = useRef(workspaceId);
+  current.current = workspaceId;
   const base = `workspaces/${workspaceId}/conversations`;
-  const navigationToggle = useRef<HTMLButtonElement>(null);
-  const navigationPanel = useRef<HTMLElement>(null);
-  function closeDrawer() {
-    setDrawer(false);
-    navigationToggle.current?.focus();
-  }
-  const [conversations, setConversations] = useState<Conversation[]>([]),
-    [next, setNext] = useState<number | null>(null),
-    [active, setActive] = useState<Conversation | null>(null);
-  const [error, setError] = useState(""),
-    [busy, setBusy] = useState(false),
-    [settings, setSettings] = useState(false),
-    [status, setStatus] = useState<AIStatus | null>(null),
-    [drawer, setDrawer] = useState(false);
+  const refresh = useCallback(async () => {
+    if (!workspaceId) return;
+    const result = await api<{
+      conversations: Conversation[];
+      nextOffset: number | null;
+    }>(`${base}?limit=100`);
+    if (current.current !== workspaceId) return;
+    setConversations((previous) =>
+      [
+        ...result.conversations,
+        ...previous.filter(
+          (c) =>
+            c.workspace_id === workspaceId &&
+            !result.conversations.some((r) => r.id === c.id),
+        ),
+      ].sort(
+        (a, b) =>
+          b.updated_at.localeCompare(a.updated_at) || a.id.localeCompare(b.id),
+      ),
+    );
+    setNext(result.nextOffset);
+  }, [base, workspaceId]);
   useEffect(() => {
-    if (drawer)
-      navigationPanel.current
-        ?.querySelector<HTMLButtonElement>("button")
-        ?.focus();
-  }, [drawer]);
-  useEffect(() => {
-    let current = true;
-    api<{ conversations: Conversation[]; nextOffset: number | null }>(base)
-      .then((r) => {
-        if (current) {
-          setConversations(r.conversations);
-          setNext(r.nextOffset);
-          setActive(r.conversations.at(-1) ?? null);
-        }
-      })
-      .catch((e) => current && setError(e.message));
-    api<AIStatus>("ai-settings")
-      .then((s) => current && setStatus(s))
-      .catch(() => {});
+    setConversations([]);
+    setNext(null);
+    setError("");
+    void refresh().catch(
+      (e) => current.current === workspaceId && setError(e.message),
+    );
+    const unsubscribe = sessions.subscribe((event) => {
+      if (event.workspaceId === workspaceId) void refresh().catch(() => {});
+    });
+    const poll = setInterval(() => {
+      void refresh().catch(() => {});
+    }, 3500);
     return () => {
-      current = false;
+      unsubscribe();
+      clearInterval(poll);
     };
-  }, [base]);
-  async function run(action: () => Promise<void>) {
+  }, [refresh, sessions, workspaceId]);
+  async function run<T>(action: () => Promise<T>): Promise<T | undefined> {
     setBusy(true);
     setError("");
     try {
-      await action();
+      return await action();
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setBusy(false);
     }
   }
-
+  async function create(text: string, configured: boolean) {
+    const conversation = await api<Conversation>(base, "POST", {});
+    void sessions
+      .start(workspaceId!, conversation.id, text, configured)
+      .catch(() =>
+        sessions.notify({ workspaceId: workspaceId!, kind: "conversation" }),
+      );
+    if (current.current === workspaceId)
+      setConversations((items) => [conversation, ...items]);
+    return conversation;
+  }
+  async function rename(conversation: Conversation) {
+    const title = prompt("Conversation title", conversation.title);
+    if (!title?.trim()) return;
+    await run(async () => {
+      const result = await api<Conversation>(
+        `${base}/${conversation.id}`,
+        "PATCH",
+        { title },
+      );
+      setConversations((items) =>
+        items.map((c) => (c.id === result.id ? result : c)),
+      );
+    });
+  }
+  async function remove(conversation: Conversation) {
+    if (
+      !confirm(
+        `Delete “${conversation.title}” and all its messages? This cannot be undone.`,
+      )
+    )
+      return false;
+    return !!(await run(async () => {
+      await api(`${base}/${conversation.id}`, "DELETE", { confirmed: true });
+      setConversations((items) =>
+        items.filter((c) => c.id !== conversation.id),
+      );
+      return true;
+    }));
+  }
+  async function more() {
+    if (next === null) return;
+    await run(async () => {
+      const result = await api<{
+        conversations: Conversation[];
+        nextOffset: number | null;
+      }>(`${base}?offset=${next}&limit=100`);
+      setConversations((items) => [
+        ...items,
+        ...result.conversations.filter(
+          (c) => !items.some((i) => i.id === c.id),
+        ),
+      ]);
+      setNext(result.nextOffset);
+    });
+  }
   return {
-    drafts,
-    base,
-    navigationToggle,
-    navigationPanel,
-    closeDrawer,
-    conversations,
-    setConversations,
+    conversations: conversations.filter((c) => c.workspace_id === workspaceId),
     next,
-    setNext,
-    active,
-    setActive,
     error,
-    setError,
     busy,
-    setBusy,
-    settings,
-    setSettings,
-    status,
-    setStatus,
-    drawer,
-    setDrawer,
-    run,
+    refresh,
+    create,
+    rename,
+    remove,
+    more,
+    sessions,
   };
 }
 export type ConversationNavigation = ReturnType<

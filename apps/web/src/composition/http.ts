@@ -1,3 +1,6 @@
+import { after } from "next/server";
+import { generateConversationTitle } from "../features/chat/server/public";
+import { resolveProvider } from "../features/providers/server/public";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import "server-only";
 import { listTurnStatuses } from "../features/agent/server/public";
@@ -42,13 +45,39 @@ export async function dispatchAuthenticated(
     return handleTools(req, service);
   if (path[0] === "catalog" && method === "GET") return service.catalog();
   if (path[0] !== "workspaces") throw new ServiceError("Not found.", 404);
-  if (path[2] === "conversations")
-    return handleChat(
+  if (path[2] === "conversations") {
+    const data = await handleChat(
       req,
       new ConversationService(db, service),
       (workspace, conversation) =>
         listTurnStatuses(db, workspace, conversation),
     );
+    if (method === "POST" && path[4] === "messages")
+      after(async () => {
+        try {
+          const admin = privilegedPersistence();
+          await generateConversationTitle({
+            admin,
+            actor,
+            workspaceId: path[1],
+            conversationId: path[3],
+            resolve: async () => {
+              const settings = await new ProviderSettingsService(
+                admin,
+                actor,
+              ).resolve();
+              return {
+                ...settings,
+                provider: resolveProvider(settings.provider).adapter,
+              };
+            },
+          });
+        } catch {
+          /* Saving messages remains usable without inference configuration. */
+        }
+      });
+    return data;
+  }
   if (path[2] === "collections") return handleCollections(req, service);
   if (path[2] === "interface" || path[2] === "revisions")
     return handleInterfaces(req, service);

@@ -4,7 +4,16 @@ export function ChatComposer({
   controller,
   configured,
 }: {
-  controller: ChatThreadController;
+  controller: Pick<
+    ChatThreadController,
+    | "draft"
+    | "setDraft"
+    | "loading"
+    | "composer"
+    | "running"
+    | "submit"
+    | "cancel"
+  >;
   configured: boolean;
 }) {
   const { draft, setDraft, loading, composer, running, submit, cancel } =
@@ -24,7 +33,7 @@ export function ChatComposer({
         ref={composer}
         id="chat-message"
         disabled={loading}
-        rows={2}
+        rows={1}
         maxLength={20000}
         value={draft}
         onChange={(e) => {

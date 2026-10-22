@@ -18,6 +18,12 @@ export interface AgentHost {
   ) => Promise<{ provider: string; model: string; apiKey: string }>;
   provider: (id: string) => ModelProvider;
   executor: (workspace: string) => ExecutionTools;
+  title?: (
+    workspace: string,
+    conversation: string,
+    settings: { provider: string; model: string; apiKey: string },
+    signal: AbortSignal,
+  ) => Promise<{ id: string; title: string } | null>;
 }
 const active = new Map<string, AbortController>();
 export async function cancelAgent(
@@ -92,6 +98,17 @@ export async function agentResponse(
         writer.write({ type: "finish" });
         return;
       }
+      const titleTask = host
+        .title?.(a.workspaceId, a.conversationId, settings, requestSignal)
+        .then((title) => {
+          if (title)
+            writer.write({
+              type: "data-conversation",
+              data: title,
+              transient: true,
+            });
+        })
+        .catch(() => {});
       const controller = new AbortController();
       active.set(`${actor}:${a.turnId}`, controller);
       const signal = AbortSignal.any([controller.signal, requestSignal]);
@@ -173,6 +190,7 @@ export async function agentResponse(
         active.delete(`${actor}:${a.turnId}`);
         for (const id of opened) writer.write({ type: "text-end", id });
       }
+      await titleTask;
       writer.write({ type: "finish" });
     },
   });
