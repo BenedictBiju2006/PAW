@@ -4,7 +4,8 @@
   "private": true,
   "workspaces": [
     "apps/*",
-    "packages/*"
+    "packages/*",
+    "apps/web/src/features/interfaces/protocol"
   ],
   "scripts": {
     "dev": "npm run dev --workspace apps/web",

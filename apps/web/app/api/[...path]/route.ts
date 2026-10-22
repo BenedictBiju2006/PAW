@@ -1,23 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ZodError } from "zod";
-import { supabase, configured } from "../../../lib/supabase";
-import {
-  ServiceError,
-  WorkspaceService,
-} from "../../../../../packages/core/services";
+import { supabase, configured } from "../../../src/shared/db/supabase";
+import { ServiceError } from "../../../src/shared/db/result";
+import { createWorkspaceServices } from "../../../src/composition/services";
 
-import { ConversationService } from "../../../../../packages/conversations/services";
-import { createToolRegistry } from "../../../../../packages/tools/definitions";
-import { ToolExecutor } from "../../../../../packages/tools/executor";
+import { ConversationService } from "../../../src/features/chat/server/services";
+import { createToolRegistry } from "../../../src/composition/tools";
+import { ToolExecutor } from "../../../src/features/tooling/server/executor";
 import { z } from "zod";
 
 import {
   agentResponse,
   cancelAgent,
   privilegedPersistence,
-} from "../../../lib/agent";
-import { ProviderSettingsService } from "../../../../../packages/agent/settings";
-import { isAllowedOrigin } from "../../../lib/origin";
+} from "../../../src/composition/agent-host";
+import { ProviderSettingsService } from "../../../src/features/providers/server/settings";
+import { isAllowedOrigin } from "../../../src/shared/http/origin";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -97,7 +95,7 @@ async function handle(
       error,
     } = await db.auth.getUser();
     if (error || !user) throw new ServiceError("Please sign in.", 401);
-    const service = new WorkspaceService(db, user.id);
+    const service = createWorkspaceServices(db, user.id);
     if (path[0] === "ai-settings" && path.length === 1) {
       const settings = new ProviderSettingsService(
         privilegedPersistence(),

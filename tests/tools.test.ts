@@ -1,13 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createToolRegistry } from "../packages/tools/definitions";
-import { ToolExecutor } from "../packages/tools/executor";
-import { WorkspaceService } from "../packages/core/services";
+import { createToolRegistry } from "../apps/web/src/composition/tools";
+import { ToolExecutor } from "../apps/web/src/features/tooling/server/executor";
+import { createWorkspaceServices } from "../apps/web/src/composition/services";
 import { createClient } from "@supabase/supabase-js";
-import { createMcpAdapter } from "../packages/tools/mcp";
+import { createMcpAdapter } from "../apps/web/src/composition/mcp";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-const service = new WorkspaceService(
+const service = createWorkspaceServices(
   createClient("http://127.0.0.1:1", "unit-test-only"),
   "11111111-1111-4111-8111-111111111111",
 );

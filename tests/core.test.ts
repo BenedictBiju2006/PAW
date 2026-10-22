@@ -1,11 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import {
-  fieldsSchema,
-  interfaceSchema,
-  validateBindings,
-  validateData,
-} from "../packages/core/schema";
+import { fieldsSchema, validateData } from "../apps/web/src/features/collections/model/schema";
+import { interfaceSchema, validateBindings } from "../apps/web/src/features/interfaces/protocol/document";
 const fields = fieldsSchema.parse([
   { key: "title", label: "Title", type: "string", required: true },
   { key: "rating", label: "Rating", type: "number" },
@@ -59,7 +55,7 @@ test("collection schemas reject duplicate keys and invalid enum options", () => 
     ]),
   );
 });
-import { isAllowedOrigin } from "../apps/web/lib/origin";
+import { isAllowedOrigin } from "../apps/web/src/shared/http/origin";
 test("development accepts the actual host while rejecting other origins and ports", () => {
   assert.equal(
     isAllowedOrigin(
