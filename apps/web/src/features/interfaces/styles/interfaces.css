@@ -1,0 +1,161 @@
+.a2ui-column,
+.a2ui-runtime {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  width: 100%;
+  min-width: 0;
+}
+.a2ui-row {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+.a2ui-text {
+  margin: 0;
+  white-space: pre-wrap;
+  color: var(--text);
+}
+button .a2ui-text {
+  color: inherit;
+}
+.a2ui-runtime [data-a2ui-component],
+.a2ui-runtime a2ui-react-host {
+  min-width: 0;
+}
+.builder-header {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+.builder-header h2 {
+  margin-bottom: 8px;
+}
+.builder-header p {
+  max-width: 550px;
+}
+.builder-header .row {
+  flex-shrink: 0;
+}
+.builder-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 8px 0 24px;
+}
+.builder-tools .row {
+  flex-wrap: wrap;
+}
+.editor-preview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 24px;
+}
+.code-editor {
+  font:
+    12px/1.65 ui-monospace,
+    SFMono-Regular,
+    Consolas,
+    monospace;
+  margin-top: 10px;
+  tab-size: 2;
+  background: #fafafa;
+}
+.preview {
+  border: 1px solid var(--border);
+  padding: 20px;
+  border-radius: var(--radius-small);
+  min-width: 0;
+  overflow: auto;
+}
+.preview > h3 {
+  font-size: 13px;
+  color: var(--secondary);
+  margin-bottom: 24px;
+}
+.preview .surface {
+  padding: 16px;
+}
+.preview .data-toolbar {
+  flex-wrap: wrap;
+}
+.preview .chart-row > span {
+  width: 75px;
+}
+.builder-history {
+  border-top: 1px solid var(--border);
+  padding-top: 24px;
+  margin-top: 24px;
+}
+.history-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  padding: 16px 0;
+  font-size: 13px;
+}
+.history-row details {
+  width: 100%;
+}
+.catalog-reference {
+  margin-top: 24px;
+  font-size: 13px;
+}
+.catalog-reference p {
+  margin-top: 16px;
+}
+@media (max-width: 1200px) {
+  .editor-preview {
+    grid-template-columns: 1fr;
+  }
+  .builder-header {
+    flex-wrap: wrap;
+  }
+}
+@media (max-width: 760px) {
+  .builder-header .row {
+    flex-wrap: wrap;
+    flex-shrink: 1;
+  }
+  .preview {
+    padding: 12px;
+  }
+}
+.interface-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+.interface-heading h2 {
+  font-size: 16px;
+  margin: 0;
+}
+.interface-heading button {
+  font-size: 12px;
+}
+.interface-content {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  padding: 20px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+@media (max-width: 480px) {
+  .interface-content {
+    padding: 12px;
+  }
+}
+.a2ui-row > * {
+  flex: 1 1 220px;
+  min-width: 0;
+  max-width: 100%;
+}

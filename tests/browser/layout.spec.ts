@@ -446,4 +446,29 @@ for (const width of widths)
         path: resolve(output, `${width}-keyboard-height.png`),
       });
     }
+    // Each conversation keeps its own draft when its thread remounts.
+    const selectConversation = async (title: string) => {
+      await openConversations(page);
+      await page
+        .getByRole("navigation", { name: "Conversations", exact: true })
+        .getByRole("button", { name: title, exact: true })
+        .click();
+    };
+    await selectConversation("Short conversation");
+    await expect(page.getByLabel("Message", { exact: true })).toHaveValue("");
+    await page
+      .getByLabel("Message", { exact: true })
+      .fill("Short thread draft.");
+    await selectConversation("Long conversation");
+    await expect(page.getByLabel("Message", { exact: true })).toHaveValue(
+      "Keep this draft across views.",
+    );
+    await selectConversation("Short conversation");
+    await expect(page.getByLabel("Message", { exact: true })).toHaveValue(
+      "Short thread draft.",
+    );
+    await selectConversation("Long conversation");
+    await expect(page.getByLabel("Message", { exact: true })).toHaveValue(
+      "Keep this draft across views.",
+    );
   });

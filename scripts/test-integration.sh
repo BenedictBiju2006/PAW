@@ -41,4 +41,4 @@ for ((i=0;i<30;i++)); do
   if curl --silent --fail "$PAW_TEST_REST_URL" >/dev/null; then break; fi
   sleep 1
 done
-node --import tsx --test tests/integration.test.ts
+node --conditions=react-server --import tsx --test tests/integration.test.ts

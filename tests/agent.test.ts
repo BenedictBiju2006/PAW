@@ -5,15 +5,15 @@ import {
   encryptCredential,
   decryptCredential,
   credentialKey,
-} from "../packages/agent/credentials";
-import { modelHistory } from "../packages/agent/context";
-import { AgentOrchestrator, agentLimits } from "../packages/agent/orchestrator";
-import { createToolRegistry } from "../packages/tools/definitions";
-import { ToolExecutor } from "../packages/tools/executor";
-import type { ModelProvider } from "../packages/agent/provider";
-import { providerError } from "../packages/agent/provider";
-import type { Message } from "../packages/conversations/schema";
-import { WorkspaceService } from "../packages/core/services";
+} from "../apps/web/src/features/providers/server/credentials";
+import { modelHistory } from "../apps/web/src/features/agent/server/context";
+import { AgentOrchestrator, agentLimits } from "../apps/web/src/features/agent/server/orchestrator";
+import { createToolRegistry } from "../apps/web/src/composition/tools";
+import { ToolExecutor } from "../apps/web/src/features/tooling/server/executor";
+import type { ModelProvider } from "../apps/web/src/features/providers/model/provider";
+import { providerError } from "../apps/web/src/features/providers/model/provider";
+import type { Message } from "../apps/web/src/features/chat/model/schema";
+import { createWorkspaceServices } from "../apps/web/src/composition/services";
 import { createClient } from "@supabase/supabase-js";
 import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
 const workspaceId = "11111111-1111-4111-8111-111111111111",
@@ -62,7 +62,7 @@ test("history is bounded; forged roles and old system instructions are never rep
   assert.equal(modelHistory([message("user", "1234567890")], 5).length, 0);
 });
 function setup(provider: ModelProvider, limit = agentLimits({})) {
-  const service = new WorkspaceService(
+  const service = createWorkspaceServices(
     createClient("http://127.0.0.1:1", "unit-only"),
     workspaceId,
   );
@@ -291,7 +291,7 @@ test("destructive activity is approval-required and identical mutation attempts 
       step++;
     },
   };
-  const service = new WorkspaceService(
+  const service = createWorkspaceServices(
     createClient("http://127.0.0.1:1", "unit-only"),
     workspaceId,
   );
@@ -321,7 +321,7 @@ test("destructive activity is approval-required and identical mutation attempts 
 });
 
 test("OpenAI adapter uses the Responses wire API and normalizes real SDK function-call/usage events", async () => {
-  const { openaiProvider } = await import("../packages/agent/providers/openai");
+  const { openaiProvider } = await import("../apps/web/src/features/providers/server/adapters/openai");
   const { tool } = await import("ai");
   const original = globalThis.fetch;
   let requested: any;
@@ -409,7 +409,7 @@ test("OpenAI adapter uses the Responses wire API and normalizes real SDK functio
 
 test("registry resolves only supported providers and provider-scoped model lists", async () => {
   const { resolveProvider, providerModels, validateModel } =
-    await import("../packages/agent/registry");
+    await import("../apps/web/src/features/providers/server/registry");
   for (const id of ["openai", "google", "groq"] as const) {
     assert.equal(resolveProvider(id).adapter.id, id);
     assert.ok(providerModels(id).length > 0);
@@ -445,7 +445,7 @@ test("provider authenticated data preserves legacy OpenAI envelopes and isolates
 });
 
 test("key validation uses provider metadata APIs, verifies Gemini generation, and redacts failures", async () => {
-  const { validateProviderKey } = await import("../packages/agent/registry");
+  const { validateProviderKey } = await import("../apps/web/src/features/providers/server/registry");
   for (const id of ["openai", "google", "groq"] as const) {
     await validateProviderKey(
       id,
@@ -496,7 +496,7 @@ test("key validation uses provider metadata APIs, verifies Gemini generation, an
 for (const id of ["google", "groq"] as const)
   test(`${id} real SDK adapter runs discovery and execution through the shared orchestrator`, async () => {
     const { resolveProvider, providerModels } =
-      await import("../packages/agent/registry");
+      await import("../apps/web/src/features/providers/server/registry");
     const original = globalThis.fetch;
     let requestCount = 0;
     const requests: any[] = [];
@@ -680,7 +680,7 @@ test("provider errors distinguish invalid Gemini keys, unavailable models, quota
 
 test("Gemini defaults use verified stable 3.x tool models without rewriting saved legacy settings", async () => {
   const { providerModels, validateModel } =
-    await import("../packages/agent/registry");
+    await import("../apps/web/src/features/providers/server/registry");
   assert.deepEqual(providerModels("google", {}), [
     "gemini-3.8-flash",
     "gemini-3.5-flash-lite",
@@ -714,7 +714,7 @@ test("Gemini defaults use verified stable 3.x tool models without rewriting save
 });
 
 test("Gemini metadata validation never performs inference or promises inference access", async () => {
-  const { validateProviderKey } = await import("../packages/agent/registry");
+  const { validateProviderKey } = await import("../apps/web/src/features/providers/server/registry");
   let count = 0;
   const result = await validateProviderKey(
     "google",
@@ -753,7 +753,7 @@ test("Gemini metadata validation never performs inference or promises inference 
 });
 
 test("Google validation and inference errors distinguish restricted projects from not-found, invalid keys and unsupported tools", async () => {
-  const { validateProviderKey } = await import("../packages/agent/registry");
+  const { validateProviderKey } = await import("../apps/web/src/features/providers/server/registry");
   const cases = [
     {
       status: 404,
@@ -857,7 +857,7 @@ function assertGoogleDeclaration(value: any) {
 }
 
 test("legacy Google wire reproduces a first-request schema rejection before any tool response", async () => {
-  const { sdkProvider } = await import("../packages/agent/providers/sdk");
+  const { sdkProvider } = await import("../apps/web/src/features/providers/server/adapters/sdk");
   const { createGoogleGenerativeAI } = await import("@ai-sdk/google");
   const original = globalThis.fetch;
   let requests = 0;
@@ -915,7 +915,7 @@ test("legacy Google wire reproduces a first-request schema rejection before any 
 for (const signAll of [false, true])
   test(`Google parallel multi-step wire preserves original signatures, args, IDs and grouping (all signed: ${signAll})`, async () => {
     const { googleProvider } =
-      await import("../packages/agent/providers/google");
+      await import("../apps/web/src/features/providers/server/adapters/google");
     const original = globalThis.fetch;
     const bodies: any[] = [];
     const rawArguments =
@@ -1056,7 +1056,7 @@ for (const signAll of [false, true])
   });
 
 test("Google wire simplification cannot bypass dispatch, strict bootstrap validation, or mutation validation", async () => {
-  const { googleProvider } = await import("../packages/agent/providers/google");
+  const { googleProvider } = await import("../apps/web/src/features/providers/server/adapters/google");
   const original = globalThis.fetch;
   let step = 0,
     created = 0;
@@ -1149,7 +1149,7 @@ test("Google wire simplification cannot bypass dispatch, strict bootstrap valida
 for (const status of [400, 422])
   test(`Google HTTP ${status} identifies rejection after tool results and never exposes private upstream text`, async () => {
     const { googleProvider } =
-      await import("../packages/agent/providers/google");
+      await import("../apps/web/src/features/providers/server/adapters/google");
     const original = globalThis.fetch;
     let requests = 0;
     globalThis.fetch = async () =>
@@ -1193,7 +1193,7 @@ for (const status of [400, 422])
   });
 
 test("Google missing signatures fail before replay instead of activating the SDK dummy-signature fallback", async () => {
-  const { googleProvider } = await import("../packages/agent/providers/google");
+  const { googleProvider } = await import("../apps/web/src/features/providers/server/adapters/google");
   const original = globalThis.fetch;
   let requests = 0;
   globalThis.fetch = async () => {
@@ -1223,7 +1223,7 @@ test("Google missing signatures fail before replay instead of activating the SDK
 });
 
 test("Google JSON-string dispatch executes a valid nested mutation through the original ToolExecutor", async () => {
-  const { googleProvider } = await import("../packages/agent/providers/google");
+  const { googleProvider } = await import("../apps/web/src/features/providers/server/adapters/google");
   const original = globalThis.fetch;
   const args = {
     workspaceId,
@@ -1337,7 +1337,7 @@ test("Google schema diagnostics retain safe protocol paths without exposing upst
 });
 
 test("Google retains a real signature arriving on a later partialArgs chunk", async () => {
-  const { googleProvider } = await import("../packages/agent/providers/google");
+  const { googleProvider } = await import("../apps/web/src/features/providers/server/adapters/google");
   const original = globalThis.fetch;
   let requests = 0;
   globalThis.fetch = async (_, init) => {
@@ -1422,7 +1422,7 @@ test("Google retains a real signature arriving on a later partialArgs chunk", as
 });
 
 test("pre-fix Google partialArgs replay loses the real signature and reproduces rejection on request two", async () => {
-  const { sdkProvider } = await import("../packages/agent/providers/sdk");
+  const { sdkProvider } = await import("../apps/web/src/features/providers/server/adapters/sdk");
   const { createGoogleGenerativeAI } = await import("@ai-sdk/google");
   const original = globalThis.fetch;
   let requests = 0,

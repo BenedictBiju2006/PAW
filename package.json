@@ -4,19 +4,20 @@
   "private": true,
   "workspaces": [
     "apps/*",
-    "packages/*"
+    "apps/web/src/features/interfaces/protocol"
   ],
   "scripts": {
     "dev": "npm run dev --workspace apps/web",
     "build": "npm run build --workspace apps/web",
     "start": "npm run start --workspace apps/web",
     "typecheck": "tsc --noEmit -p apps/web/tsconfig.json",
-    "test": "tsx --test tests/core.test.ts tests/a2ui.test.ts tests/tools.test.ts tests/agent.test.ts",
+    "test": "node --conditions=react-server --import tsx --test tests/core.test.ts tests/a2ui.test.ts tests/tools.test.ts tests/agent.test.ts tests/architecture.test.ts",
     "test:integration": "bash scripts/test-integration.sh",
     "test:browser": "bash scripts/test-browser.sh",
     "format": "prettier --write apps packages tests playwright.config.ts package.json README.md",
     "catalog:generate": "tsx scripts/generate-catalog.ts",
-    "test:live": "tsx --test tests/openai-live.test.ts"
+    "test:live": "node --conditions=react-server --import tsx --test tests/openai-live.test.ts",
+    "test:architecture": "node scripts/check-boundaries.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.64.1",

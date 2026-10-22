@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { openaiProvider } from "../packages/agent/providers/openai";
+import { openaiProvider } from "../apps/web/src/features/providers/server/adapters/openai";
 test(
   "opt-in paid OpenAI Responses smoke",
   {

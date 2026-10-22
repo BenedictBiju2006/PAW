@@ -2,9 +2,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
-import { emptyInterface, inspectInterface } from "../packages/a2ui/document";
-import { CATALOG_ID, PROTOCOL } from "../packages/a2ui/catalog";
-import { WorkspaceService } from "../packages/core/services";
+import { emptyInterface, inspectInterface } from "../apps/web/src/features/interfaces/protocol/document";
+import { CATALOG_ID, PROTOCOL } from "../apps/web/src/features/interfaces/protocol/catalog";
+import { createWorkspaceServices } from "../apps/web/src/composition/services";
 const enabled = Boolean(process.env.PAW_TEST_REST_URL);
 const a = "11111111-1111-4111-8111-111111111111";
 const b = "22222222-2222-4222-8222-222222222222";
@@ -40,7 +40,7 @@ test(
   { skip: !enabled },
   async () => {
     const { ProviderSettingsService } =
-      await import("../packages/agent/settings");
+      await import("../apps/web/src/features/providers/server/settings");
     const admin = client(undefined, "service_role");
     const settings = new ProviderSettingsService(admin, b, {
       PAW_CREDENTIAL_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString("base64"),
@@ -59,8 +59,8 @@ test(
     const dbA = client(a),
       dbB = client(b),
       anonymous = client();
-    const owner = new WorkspaceService(dbA, a),
-      stranger = new WorkspaceService(dbB, b);
+    const owner = createWorkspaceServices(dbA, a),
+      stranger = createWorkspaceServices(dbB, b);
     let workspace: any, collection: any, record: any;
     await t.test(
       "forward migration preserves legacy interfaces, records, revisions, and supports conversion/restore",
@@ -139,7 +139,7 @@ test(
           rating: 0,
           read: false,
         });
-        const returning = new WorkspaceService(client(a), a);
+        const returning = createWorkspaceServices(client(a), a);
         const page = await returning.records(workspace.id, collection.id);
         assert.equal(page.total, 1);
         assert.equal(page.records![0].data.read, false);
@@ -512,11 +512,11 @@ test(
   { skip: !enabled },
   async (t) => {
     const { createToolRegistry } =
-      await import("../packages/tools/definitions");
-    const { ToolExecutor } = await import("../packages/tools/executor");
+      await import("../apps/web/src/composition/tools");
+    const { ToolExecutor } = await import("../apps/web/src/features/tooling/server/executor");
     const { ConversationService } =
-      await import("../packages/conversations/services");
-    const { createMcpAdapter } = await import("../packages/tools/mcp");
+      await import("../apps/web/src/features/chat/server/services");
+    const { createMcpAdapter } = await import("../apps/web/src/composition/mcp");
     const { Client } =
       await import("@modelcontextprotocol/sdk/client/index.js");
     const { InMemoryTransport } =
@@ -524,8 +524,8 @@ test(
     const dbA = client(a),
       dbB = client(b),
       registry = createToolRegistry();
-    const service = new WorkspaceService(dbA, a),
-      other = new WorkspaceService(dbB, b);
+    const service = createWorkspaceServices(dbA, a),
+      other = createWorkspaceServices(dbB, b);
     const context = {
       service,
       permissions: new Set(["read", "write", "delete"] as const),
@@ -628,7 +628,7 @@ test(
           3,
         );
         const fresh = new ToolExecutor(registry, {
-          service: new WorkspaceService(client(a), a),
+          service: createWorkspaceServices(client(a), a),
           permissions: context.permissions,
         });
         assert.equal(
@@ -871,7 +871,7 @@ test(
           (
             await new ConversationService(
               client(a),
-              new WorkspaceService(client(a), a),
+              createWorkspaceServices(client(a), a),
             ).messages(workspaceId, one.id)
           ).messages.length,
           2,
@@ -975,23 +975,23 @@ test(
   "Milestone 3: trusted persistence, encrypted settings and scripted autonomous agent",
   { skip: !enabled },
   async (t) => {
-    const { AgentStore } = await import("../packages/agent/store");
+    const { AgentStore } = await import("../apps/web/src/features/agent/server/store");
     const { AgentOrchestrator } =
-      await import("../packages/agent/orchestrator");
+      await import("../apps/web/src/features/agent/server/orchestrator");
     const { ProviderSettingsService } =
-      await import("../packages/agent/settings");
-    const { modelHistory } = await import("../packages/agent/context");
+      await import("../apps/web/src/features/providers/server/settings");
+    const { modelHistory } = await import("../apps/web/src/features/agent/server/context");
     const { createToolRegistry } =
-      await import("../packages/tools/definitions");
-    const { ToolExecutor } = await import("../packages/tools/executor");
+      await import("../apps/web/src/composition/tools");
+    const { ToolExecutor } = await import("../apps/web/src/features/tooling/server/executor");
     const { ConversationService } =
-      await import("../packages/conversations/services");
-    const { appendComponents } = await import("../packages/a2ui/document");
+      await import("../apps/web/src/features/chat/server/services");
+    const { appendComponents } = await import("../apps/web/src/features/interfaces/protocol/document");
     const { randomUUID, randomBytes } = await import("node:crypto");
     const db = client(a),
       admin = client(undefined, "service_role"),
       stranger = client(b);
-    const service = new WorkspaceService(db, a),
+    const service = createWorkspaceServices(db, a),
       conversations = new ConversationService(db, service),
       w = await service.create("Scripted agent workspace"),
       c = await conversations.create(w.id, "Movie tracker"),
@@ -1492,8 +1492,8 @@ test(
   { skip: !enabled },
   async () => {
     const { ProviderSettingsService } =
-      await import("../packages/agent/settings");
-    const { providerModels } = await import("../packages/agent/registry");
+      await import("../apps/web/src/features/providers/server/settings");
+    const { providerModels } = await import("../apps/web/src/features/providers/server/registry");
     const admin = client(undefined, "service_role");
     const env = {
       PAW_CREDENTIAL_ENCRYPTION_KEY: Buffer.alloc(32, 9).toString("base64"),
@@ -1510,16 +1510,16 @@ test(
     const status = await settings.status();
     assert.equal(status.providers.filter((p) => p.configured).length, 3);
     assert.ok(!JSON.stringify(status).includes("secret"));
-    const { AgentStore } = await import("../packages/agent/store");
+    const { AgentStore } = await import("../apps/web/src/features/agent/server/store");
     const { AgentOrchestrator } =
-      await import("../packages/agent/orchestrator");
+      await import("../apps/web/src/features/agent/server/orchestrator");
     const { ConversationService } =
-      await import("../packages/conversations/services");
+      await import("../apps/web/src/features/chat/server/services");
     const { createToolRegistry } =
-      await import("../packages/tools/definitions");
-    const { ToolExecutor } = await import("../packages/tools/executor");
+      await import("../apps/web/src/composition/tools");
+    const { ToolExecutor } = await import("../apps/web/src/features/tooling/server/executor");
     const { randomUUID } = await import("node:crypto");
-    const service = new WorkspaceService(client(b), b);
+    const service = createWorkspaceServices(client(b), b);
     const workspace = await service.create("Switch providers");
     const conversations = new ConversationService(client(b), service);
     const conversation = await conversations.create(
@@ -1547,7 +1547,7 @@ test(
         text: `Hello ${provider}`,
         ...selected,
       });
-      const adapter: import("../packages/agent/provider").ModelProvider = {
+      const adapter: import("../apps/web/src/features/providers/model/provider").ModelProvider = {
         id: provider,
         capabilities: { streaming: true, tools: true, hostedMcp: false },
         async *stream() {
@@ -1618,8 +1618,8 @@ test(
   { skip: !enabled },
   async () => {
     const { ProviderSettingsService } =
-      await import("../packages/agent/settings");
-    const { encryptCredential } = await import("../packages/agent/credentials");
+      await import("../apps/web/src/features/providers/server/settings");
+    const { encryptCredential } = await import("../apps/web/src/features/providers/server/credentials");
     const admin = client(undefined, "service_role");
     const env = {
       PAW_CREDENTIAL_ENCRYPTION_KEY: Buffer.alloc(32, 12).toString("base64"),

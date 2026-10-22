@@ -2,6 +2,10 @@
 
 Persistent Agentic Workspaces. Conversations become software. Milestone 3.1 supports OpenAI, Google Gemini, and Groq through one discovery-driven agent, with streaming Chat beside the persistent A2UI Interface and manual tools under Developer Tools.
 
+## Architecture
+
+Application code lives in `apps/web/src/features/{auth,workspaces,collections,interfaces,chat,agent,providers,tooling}`. `src/composition` assembles the runtime; `src/shared` contains small neutral primitives. App Router entrypoints remain under `apps/web/app`. See [architecture and extension guide](docs/architecture.md) for feature contracts, dependency rules, server/client boundaries, and the dependency diagram. Run `npm run test:architecture` to enforce these boundaries. [Refactor verification](docs/verification/feature-refactor/README.md) includes the baseline and rendered screenshots.
+
 ## Run locally
 
 Use Node.js 24 (`.nvmrc`) and npm from the existing checkout; no additional Git worktree is needed.
@@ -23,13 +27,13 @@ For production, set connection variables, run `npm run build`, then `npm start`.
 
 Apply only the migrations your database has not received, in filename order:
 
-- Milestone 1 installation: apply [`202610200002_a2ui.sql`](supabase/migrations/202610200002_a2ui.sql), then [`202610200003_conversations.sql`](supabase/migrations/202610200003_conversations.sql).
-- Milestone 1.5 installation (A2UI already applied): apply [`202610200003_conversations.sql`](supabase/migrations/202610200003_conversations.sql).
-- All installations upgrading to Milestone 3: apply [`202610200004_agent.sql`](supabase/migrations/202610200004_agent.sql) after the earlier migrations.
+- Apply any pending A2UI migration, `202610200002_a2ui.sql`, before the agent migration.
+- The historical conversations migration has already been applied to the current installation and is no longer shipped in `supabase/migrations`. Do not rerun it or use the disposable test fixture against a hosted project.
+- Apply `202610200004_agent.sql` and then `202610220001_multi_provider.sql` only if they are absent from your deployment's migration history. This architecture refactor adds no migration.
 
 In the Supabase dashboard, open **SQL Editor**, paste each pending file into a separate new query, and run it once. Apply pending migrations before using this app version. Never rerun an already-applied migration; the original milestone migrations remain unchanged.
 
-For a fresh project, apply all migration files in filename order (including the Milestone 2 migration described below). Alternatively, use the Supabase CLI's normal migration flow:
+For a fresh project, first recover the historical conversation migration from your deployment history, then apply the remaining migration files in filename order (including the Milestone 2 migration described below). Alternatively, use the Supabase CLI's normal migration flow:
 
 ```sh
 supabase init # Only if you have not initialized CLI configuration
@@ -124,7 +128,7 @@ Replace `COLLECTION_UUID` with the ID shown in the collection schema panel. The 
 
 ## Catalog, bindings, and actions
 
-The catalog source is [`packages/a2ui/catalog.ts`](packages/a2ui/catalog.ts), with a generated [machine-readable JSON catalog](packages/a2ui/catalog.json). The authenticated `GET /api/catalog` endpoint exposes the same catalog. Regenerate JSON after schema changes with `npm run catalog:generate`. The builder displays the catalog for reference.
+The catalog source is [`apps/web/src/features/interfaces/protocol/catalog.ts`](apps/web/src/features/interfaces/protocol/catalog.ts), with a generated [machine-readable JSON catalog](apps/web/src/features/interfaces/protocol/catalog.json). The authenticated `GET /api/catalog` endpoint exposes the same catalog. Regenerate JSON after schema changes with `npm run catalog:generate`. The builder displays the catalog for reference.
 
 | Components              | Purpose                                                                                        |
 | ----------------------- | ---------------------------------------------------------------------------------------------- |
@@ -159,25 +163,25 @@ For ordinary inputs, bind a value using `{ "path": "/draft/title" }` and initial
 }
 ```
 
-Declare `submit_label` as a Text component and reference `submit` from the root layout. `paw.refresh` is the other supported event. No arbitrary navigation, scripts, HTML injection, SQL, external network actions, or client functions are exposed. Text is rendered as plain React text rather than unsafe HTML/Markdown. Actual persistence still goes through the authorized `WorkspaceService`, and successful mutations refresh collection-backed views.
+Declare `submit_label` as a Text component and reference `submit` from the root layout. `paw.refresh` is the other supported event. No arbitrary navigation, scripts, HTML injection, SQL, external network actions, or client functions are exposed. Text is rendered as plain React text rather than unsafe HTML/Markdown. Actual persistence still goes through the authorized feature services, and successful mutations refresh collection-backed views.
 
 ## Existing interfaces and revision history
 
 The forward migration preserves every workspace, collection, record, RLS policy, and original revision payload. It changes the default for newly created workspaces and adds database validation for A2UI message envelopes, catalog components, properties, graph references, scopes, and limits. Existing record validators, immutable history capture, and optimistic revision updates remain in place. Application validation additionally uses the official full protocol/catalog processor, including nested dynamic properties and A2UI semantics.
 
-Previously saved `{version:1,nodes:[...]}` definitions are converted **deterministically on read** by `packages/a2ui/legacy.ts`. Headings/text become Text components; layouts become Columns/Tabs; persistent components become PAW catalog components; refresh buttons become A2UI Buttons. Reserved IDs and legacy hyphens are renamed consistently with their references. The original database definition is unchanged until a user saves the converted A2UI definition as a new revision.
+Previously saved `{version:1,nodes:[...]}` definitions are converted **deterministically on read** by `apps/web/src/features/interfaces/protocol/legacy.ts`. Headings/text become Text components; layouts become Columns/Tabs; persistent components become PAW catalog components; refresh buttons become A2UI Buttons. Reserved IDs and legacy hyphens are renamed consistently with their references. The original database definition is unchanged until a user saves the converted A2UI definition as a new revision.
 
 If conversion fails, the app displays an explicit compatibility error and exposes the untouched source in the builder for recovery. It never silently drops unknown components or overwrites the old definition. Data management remains available independently of interface recovery. Saving/restoring a legacy revision converts it through the same compatibility boundary before validation and creates a new revision. Existing revision JSON is never rewritten. The builder shows the latest 20 revisions and allows inspecting each original payload.
 
 ## Services and API
 
-- `packages/a2ui`: official catalog schemas, validation/replay, inspection, shortcuts, and legacy conversion.
-- `packages/core`: provider-independent workspace, collection, record, interface, and aggregation services.
-- `apps/web/app/a2ui-runtime.tsx`: official React renderer and PAW catalog implementations.
-- `apps/web/app/interface-builder.tsx`: editor and preview using that exact runtime.
-- `apps/web/app/globals.css`: shared typography, spacing, borders, surfaces, radii, and interaction tokens, inspired by the four Ranked screens named in the task. No logo, decorative illustrations, gradients, or dashboard branding.
+- `apps/web/src/features/interfaces/protocol`: official catalog schemas, validation/replay, inspection, shortcuts, and legacy conversion.
+- `apps/web/src/features (Workspaces, Collections, Interfaces)`: provider-independent workspace, collection, record, interface, and aggregation services.
+- `apps/web/src/features/interfaces/components/A2UIRuntime.tsx`: official React renderer and PAW catalog implementations.
+- `apps/web/src/features/interfaces/components/InterfaceBuilder.tsx`: editor and preview using that exact runtime.
+- `apps/web/app/globals.css`: imports shared tokens/primitives and feature-owned stylesheets with the existing typography, spacing, borders, surfaces, radii, and interaction tokens, inspired by the four Ranked screens named in the task. No logo, decorative illustrations, gradients, or dashboard branding.
 
-`WorkspaceService.inspect()`, `catalog()`, `saveInterface()`, and `applyInterfaceMessages()` are reusable by future authorized tools. Milestone 2 wraps these methods in the shared tool registry and MCP adapter; no LLM is connected.
+`InterfaceService.inspect()`, `catalog()`, `saveInterface()`, and `applyInterfaceMessages()` are reusable by future authorized tools. Milestone 2 wraps these methods in the shared tool registry and MCP adapter; no LLM is connected.
 
 | API path (under `/api`)                                         | Methods            | Purpose                                                                  |
 | --------------------------------------------------------------- | ------------------ | ------------------------------------------------------------------------ |
@@ -217,16 +221,16 @@ The primary **Interface** pane and manual **Collections & data** and **Interface
 
 ### Migration
 
-For an existing installation, first apply `202610200002_a2ui.sql` if it has not been applied, then apply **[`supabase/migrations/202610200003_conversations.sql`](supabase/migrations/202610200003_conversations.sql)** once through Supabase SQL Editor or your normal migration deployment. Do not rerun earlier migrations. Fresh projects must apply all migration files in filename order. Repository pushes do not apply SQL automatically unless you have explicitly configured deployment.
+The historical conversations migration is already applied to the current installation and is no longer shipped. Preserve that schema and migration history. Fresh projects must recover the original conversation migration from their deployment history before applying the agent migration; the disposable test fixture is not a deployment substitute. This refactor does not change any SQL or apply migrations automatically.
 
 `conversations` belongs to a workspace. `messages` uses a composite conversation/workspace foreign key, append-only access, a database sequence for stable message ordering, and provider-neutral structured content. RLS derives ownership from the workspace and applies to direct Supabase access too. Conversation identity cannot be moved between workspaces. Deleting a conversation cascades only its messages; deleting a workspace also removes its conversations. No existing interface revisions or records are rewritten.
 
 ### Registry and execution
 
-- `packages/tools/registry.ts`: provider-independent metadata, deterministic keyword search and on-demand JSON Schema descriptions.
-- `definitions.ts`: 22 tools with descriptions, purpose, keywords, input schemas, documented output structures, permissions and side effects. Handlers delegate to `WorkspaceService`; they do not duplicate its database operations.
+- `apps/web/src/features/tooling/server/registry.ts`: provider-independent metadata, deterministic keyword search and on-demand JSON Schema descriptions.
+- `apps/web/src/composition/tools.ts`: assembles all 22 unchanged tools from feature-owned `server/tools.ts` registrars. Each handler delegates to its owning service; generic tooling contains no domain CRUD logic.
 - `executor.ts`: strict argument validation, host-granted permissions, optional workspace scope, structured errors and trusted-host confirmation for destructive requests.
-- `resources.ts`: bounded resource metadata and authorized inspection through `paw://` identifiers.
+- `apps/web/src/composition/resources.ts`: bounded cross-feature resource metadata and authorized inspection through `paw://` identifiers.
 - `mcp.ts`: official MCP TypeScript SDK adapter, instantiated per authenticated host context. It uses the same registry and executor; it does not establish a public MCP endpoint.
 
 Bootstrap discovery consists of `search_tools`, `describe_tool`, `list_resources`, and `inspect_resource`. Search returns compact summaries rather than schemas. Describe returns the full schema, permissions, behavior, side effects and documented result structure. The executor returns `{ok:true,data}` or `{ok:false,error:{code,message,guidance,issues?}}`. Unknown operations and invalid arguments fail before service invocation. A validation/conflict response can be followed by inspection and a corrected retry.
@@ -295,11 +299,11 @@ Credentials use AES-256-GCM, a fresh 12-byte nonce, authentication tag, envelope
 
 ### Agent and streaming architecture
 
-- `packages/agent/provider.ts` and `providers/openai.ts`: provider-neutral streaming/tool/usage/error/cancellation contract and its OpenAI AI SDK implementation. Dependencies are pinned to compatible installed versions. OpenAI requests use Responses, `store:false`, and no automatic request retries.
+- `apps/web/src/features/providers/model/provider.ts` and `apps/web/src/features/providers/server/adapters/openai.ts`: provider-neutral streaming/tool/usage/error/cancellation contract and its OpenAI AI SDK implementation. Dependencies are pinned to compatible installed versions. OpenAI requests use Responses, `store:false`, and no automatic request retries.
 - `orchestrator.ts`: bounded multi-step loop over the existing registry and `ToolExecutor`. The initial model request exposes **only** the four bootstrap discovery tools plus `invoke_tool`. Dispatch requires successful `describe_tool` inspection during the current turn. The system prompt contains workspace/conversation identity and exploration/security instructions, not all tool schemas, record contents, component catalogs, or example application workflows.
 - `context.ts`: recent bounded history; only genuine user messages and server-trusted assistant/tool output enter model context. Legacy assistant/system/tool inserts are not promoted to trusted instructions. Historical tool results are quoted as data; current workspace state must be inspected through tools.
 - `store.ts`: trusted event persistence through ownership-checking, service-role-only RPCs. User messages are persisted atomically with turn acceptance **before inference**. Tool-start events are persisted before execution; tool results and partial/final assistant output are provider-neutral messages.
-- `apps/web/lib/agent.ts`: verified-session streaming and cancellation host. The browser sends a conversation/workspace identity, latest text and stable turn UUID; it cannot supply roles, tools, provider keys, system prompts, permissions or historical messages.
+- `apps/web/src/composition/agent-host.ts`: verified-session streaming and cancellation host. The browser sends a conversation/workspace identity, latest text and stable turn UUID; it cannot supply roles, tools, provider keys, system prompts, permissions or historical messages.
 - Chat uses `useChat`, `DefaultChatTransport`, `createUIMessageStream` and `createUIMessageStreamResponse`, following the AI SDK UI message SSE protocol. Native text chunks carry progressive output; SDK data parts carry actual tool activity, mutation invalidation and turn/usage status. No proprietary SSE parser or alternative UI schema is introduced.
 
 The compact conversation sidebar becomes a navigation panel on mobile. Messages use restrained user bubbles and unboxed assistant Markdown. Raw HTML is skipped; the Markdown renderer's safe URL handling rejects script URLs. Code blocks have a copy action. The composer grows to a bounded height, supports Enter/Shift+Enter, and provides a stop control. Near-bottom readers follow streamed text; users reading earlier messages are not forcibly scrolled. Opening a conversation loads the newest 40 messages, with cursor-based backward pagination; sending does not require loading all history. Switching threads stops the old stream and requests cancellation without mixing its transcript into the new thread.
@@ -404,7 +408,7 @@ Explicitly select another provider if you want to switch after a failure.
 
 ### Model configuration and shared agent
 
-[`packages/agent/registry.ts`](packages/agent/registry.ts) centralizes provider IDs,
+[`apps/web/src/features/providers/server/registry.ts`](apps/web/src/features/providers/server/registry.ts) centralizes provider IDs,
 adapters, display/configuration metadata, models, and metadata validation. Defaults:
 
 | Provider          | Server variable     | Default models                                 |

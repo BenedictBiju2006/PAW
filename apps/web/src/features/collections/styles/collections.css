@@ -1,0 +1,225 @@
+.field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 110px auto 36px;
+  gap: 12px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--border);
+  align-items: end;
+}
+.field-row input,
+.field-row select {
+  padding: 9px;
+}
+.check-label {
+  flex-direction: row;
+  align-items: center;
+  min-height: 38px;
+  font-size: 12px;
+}
+.check-label input {
+  width: auto;
+}
+.enum-options {
+  grid-column: 1/-1;
+}
+.schema-details {
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  margin-bottom: 24px;
+  font-size: 13px;
+}
+.schema-details code {
+  display: block;
+  font-size: 11px;
+  margin: 16px 0;
+  overflow-wrap: anywhere;
+}
+.field-chips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.field-chips > span {
+  padding: 6px 10px;
+  background: var(--subtle);
+  border-radius: 6px;
+  font-size: 12px;
+}
+.field-chips small {
+  margin-left: 8px;
+  color: var(--secondary);
+}
+.data-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.filter-form {
+  flex-direction: row;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.filter-form input {
+  width: 150px;
+}
+.filter-form select {
+  width: 135px;
+}
+.filter-form input,
+.filter-form select,
+.filter-form button {
+  padding: 9px;
+  font-size: 12px;
+}
+.sort-controls {
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.sort-controls label {
+  flex-direction: row;
+  align-items: center;
+  font-size: 11px;
+}
+.sort-controls select {
+  width: auto;
+  padding: 6px;
+  font-size: 11px;
+}
+.table-wrap {
+  position: relative;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+}
+.record-form > button {
+  align-self: flex-start;
+}
+.record-cards article {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  padding: 20px;
+}
+.record-cards p {
+  color: var(--text);
+}
+.chart-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 12px;
+  margin: 16px 0;
+}
+.chart-row > span {
+  width: 100px;
+  flex-shrink: 0;
+  overflow-wrap: anywhere;
+}
+.chart-row > div {
+  background: #555;
+  min-width: 2px;
+  height: 18px;
+  border-radius: 3px;
+}
+@media (max-width: 1200px) {
+  .data-toolbar {
+    flex-wrap: wrap;
+  }
+}
+@media (max-width: 760px) {
+  .field-row {
+    grid-template-columns: 1fr 1fr;
+  }
+  .record-fields {
+    grid-template-columns: 1fr;
+  }
+  .chart-row > span {
+    width: 80px;
+  }
+}
+.record-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
+}
+.record-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr));
+}
+@container interface (max-width: 620px) {
+  .data-toolbar,
+  .filter-form,
+  .sort-controls {
+    flex-wrap: wrap;
+  }
+  .data-toolbar {
+    align-items: flex-start;
+  }
+  .filter-form {
+    flex: 1 1 100%;
+  }
+  .filter-form input,
+  .filter-form select {
+    flex: 1 1 120px;
+    width: auto;
+  }
+  .chart-row {
+    gap: 8px;
+  }
+  .chart-row > span {
+    width: 80px;
+  }
+}
+@container interface (min-width: 900px) {
+  .record-fields {
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  }
+}
+@container interface (max-width: 460px) {
+  .table-wrap table {
+    min-width: 0;
+  }
+  .table-wrap thead {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .table-wrap tbody,
+  .table-wrap tr {
+    display: block;
+    width: 100%;
+  }
+  .table-wrap tr {
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .table-wrap tr:last-child {
+    border-bottom: 0;
+  }
+  .table-wrap td {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 6px 12px;
+    border: 0;
+    max-width: none;
+  }
+  .table-wrap td::before {
+    content: attr(data-label);
+    flex: 0 0 72px;
+    font-size: 12px;
+    color: var(--secondary);
+  }
+  .table-wrap td > .row {
+    flex-wrap: wrap;
+  }
+}

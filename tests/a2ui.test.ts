@@ -11,14 +11,14 @@ import {
   appendComponents,
   inspectInterface,
   validateBindings,
-} from "../packages/a2ui/document";
+} from "../apps/web/src/features/interfaces/protocol/document";
 import {
   schemaCatalog,
   CATALOG_ID,
   PROTOCOL,
   catalogDocument,
-} from "../packages/a2ui/catalog";
-import { upgradeInterface } from "../packages/a2ui/legacy";
+} from "../apps/web/src/features/interfaces/protocol/catalog";
+import { upgradeInterface } from "../apps/web/src/features/interfaces/protocol/legacy";
 
 test("official A2UI protocol and PAW catalog accept and reconstruct a surface", () => {
   const definition = appendComponents(emptyInterface(), [
