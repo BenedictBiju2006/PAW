@@ -1,4 +1,5 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import "server-only";
 import { z } from "zod";
 import { ServiceError } from "../../../shared/db/result";
 const envelope = z

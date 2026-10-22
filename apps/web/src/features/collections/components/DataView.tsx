@@ -1,8 +1,8 @@
 "use client";
-import { FormEvent, useEffect, useState } from "react";
-import { Collection, DataRecord, Field, RecordData } from "../model/schema";
 import { api } from "../../../shared/http/api";
-
+import { useRecords } from "../hooks/useRecords";
+import { Collection } from "../model/schema";
+import { RecordForm } from "./RecordForm";
 type Report = (message: string) => void;
 export function DataView({
   workspaceId,
@@ -21,82 +21,40 @@ export function DataView({
   onChange?: () => void;
   readOnly?: boolean;
 }) {
-  const [records, setRecords] = useState<DataRecord[]>([]);
-  const [total, setTotal] = useState(0);
-  const [aggregation, setAggregation] = useState<{
-    count: number;
-    distinctValues: number;
-    buckets: { value: unknown; count: number }[];
-  } | null>(null);
-  const [offset, setOffset] = useState(0);
-  const [sort, setSort] = useState("");
-  const [direction, setDirection] = useState("asc");
-  const [filter, setFilter] = useState("");
-  const [value, setValue] = useState("");
-  const [queryFilter, setQueryFilter] = useState({ filter: "", value: "" });
-  const [editing, setEditing] = useState<DataRecord | "new" | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [epoch, setEpoch] = useState(0);
-  const limit = 25;
-  const base = `workspaces/${workspaceId}/collections/${collection.id}`;
-  useEffect(() => {
-    let current = true;
-    setLoading(true);
-    const params = new URLSearchParams({
-      offset: String(offset),
-      limit: String(limit),
-      direction,
-    });
-    if (sort) params.set("sort", sort);
-    if (queryFilter.filter && queryFilter.value !== "") {
-      params.set("filter", queryFilter.filter);
-      params.set("value", queryFilter.value);
-    }
-    api<{ records: DataRecord[]; total: number }>(`${base}?${params}`)
-      .then((result) => {
-        if (current) {
-          setRecords(result.records);
-          setTotal(result.total);
-        }
-      })
-      .catch((e) => {
-        if (current) report(e.message);
-      })
-      .finally(() => {
-        if (current) setLoading(false);
-      });
-    return () => {
-      current = false;
-    };
-  }, [base, offset, sort, direction, queryFilter, epoch, report]);
-  async function remove(record: DataRecord) {
-    if (!confirm("Delete this record? This cannot be undone.")) return;
-    setBusy(true);
-    try {
-      await api(`${base}/${record.id}`, "DELETE", { confirmed: true });
-      if (records.length === 1 && offset > 0)
-        setOffset(Math.max(0, offset - limit));
-      else setEpoch((n) => n + 1);
-      onChange?.();
-    } catch (error) {
-      report((error as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-  useEffect(() => {
-    if (mode !== "chart" || !field) return;
-    let current = true;
-    api(`${base}/aggregate?${new URLSearchParams({ field })}`)
-      .then((result) => {
-        if (current) setAggregation(result);
-      })
-      .catch((e) => current && report(e.message));
-    return () => {
-      current = false;
-    };
-  }, [base, mode, field, epoch, report]);
+  const controller = useRecords({
+    workspaceId,
+    collection,
+    mode,
+    field,
+    report,
+    onChange,
+    readOnly,
+  });
+  const {
+    records,
+    total,
+    aggregation,
+    offset,
+    setOffset,
+    sort,
+    setSort,
+    direction,
+    setDirection,
+    filter,
+    setFilter,
+    value,
+    setValue,
+    queryFilter,
+    setQueryFilter,
+    editing,
+    setEditing,
+    busy,
+    loading,
+    setEpoch,
+    limit,
+    base,
+    remove,
+  } = controller;
   return (
     <div className="data-view">
       <div className="data-toolbar">
@@ -359,113 +317,4 @@ function display(value: unknown) {
         ? "Yes"
         : "No"
       : String(value);
-}
-export function RecordForm({
-  collection,
-  initial,
-  save,
-  report,
-}: {
-  collection: Collection;
-  initial?: RecordData;
-  save: (data: RecordData) => Promise<void>;
-  report: Report;
-}) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const values = new FormData(form);
-    const data: RecordData = {};
-    for (const field of collection.fields) {
-      const raw = String(values.get(field.key) ?? "");
-      data[field.key] =
-        raw === "" && !field.required
-          ? null
-          : field.type === "number"
-            ? Number(raw)
-            : field.type === "boolean"
-              ? raw === "true"
-              : raw;
-    }
-    setBusy(true);
-    setError("");
-    try {
-      await save(data);
-      if (!initial) form.reset();
-    } catch (error) {
-      setError((error as Error).message);
-      report((error as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-  return (
-    <form className="record-form" onSubmit={submit}>
-      {error && (
-        <p role="alert" className="error">
-          {error}
-        </p>
-      )}
-      <div className="record-fields">
-        {collection.fields.map((field) => (
-          <label key={field.key}>
-            {field.label}
-            {field.required && " *"}
-            <FieldInput field={field} value={initial?.[field.key]} />
-          </label>
-        ))}
-      </div>
-      <button className="primary" disabled={busy}>
-        {busy ? "Saving…" : initial ? "Save changes" : "Add record"}
-      </button>
-    </form>
-  );
-}
-function FieldInput({
-  field,
-  value,
-}: {
-  field: Field;
-  value?: RecordData[string];
-}) {
-  const props = {
-    name: field.key,
-    required: field.required,
-    defaultValue: value === null || value === undefined ? "" : String(value),
-  };
-  if (field.type === "boolean")
-    return (
-      <select {...props}>
-        <option value="">Choose…</option>
-        <option value="true">Yes</option>
-        <option value="false">No</option>
-      </select>
-    );
-  if (field.type === "enum")
-    return (
-      <select {...props}>
-        <option value="">Choose…</option>
-        {field.options?.map((v) => (
-          <option key={v} value={v}>
-            {v}
-          </option>
-        ))}
-      </select>
-    );
-  return (
-    <input
-      {...props}
-      type={
-        field.type === "number"
-          ? "number"
-          : field.type === "date"
-            ? "date"
-            : "text"
-      }
-      step={field.type === "number" ? "any" : undefined}
-      maxLength={field.type === "string" ? 10000 : undefined}
-    />
-  );
 }

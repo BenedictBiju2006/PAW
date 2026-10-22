@@ -1,6 +1,6 @@
-import { legacyInterfaceSchema, type Node } from "./legacy-schema";
 import { CATALOG_ID, PROTOCOL } from "./catalog";
 import { parseInterface, type Component, type Interface } from "./document";
+import { legacyInterfaceSchema, type Node } from "./legacy-schema";
 /** Deterministic compatibility boundary. Original revision JSON is never rewritten. */
 export function upgradeInterface(input: unknown): Interface {
   if (input && typeof input === "object" && "messages" in input)

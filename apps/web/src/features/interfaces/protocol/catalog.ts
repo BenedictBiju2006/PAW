@@ -1,17 +1,17 @@
-import { z } from "zod";
 import { Catalog, CommonSchemas } from "@a2ui/web_core/v0_9";
 import {
-  TextApi,
-  RowApi,
-  ColumnApi,
-  CardApi,
   ButtonApi,
-  TextFieldApi,
-  TabsApi,
-  ListApi,
-  DividerApi,
+  CardApi,
   CheckBoxApi,
+  ColumnApi,
+  DividerApi,
+  ListApi,
+  RowApi,
+  TabsApi,
+  TextApi,
+  TextFieldApi,
 } from "@a2ui/web_core/v0_9/basic_catalog";
+import { z } from "zod";
 
 export const PROTOCOL = "v0.9.1" as const;
 export const CATALOG_ID = "https://paw.local/catalogs/workspace-v1.json";
@@ -107,4 +107,8 @@ export const schemaCatalog = new Catalog(
 );
 export function catalogDocument() {
   return schemaCatalog.toJson();
+}
+
+export function catalogComponents(): Record<string, unknown> {
+  return z.record(z.unknown()).parse(catalogDocument().components);
 }

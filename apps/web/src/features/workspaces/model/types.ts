@@ -1,4 +1,4 @@
-import type { Interface } from "../../interfaces/protocol/document";
+import type { Interface } from "../../interfaces/public";
 export type Workspace = {
   id: string;
   name: string;

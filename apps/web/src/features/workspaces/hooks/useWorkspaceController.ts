@@ -1,10 +1,12 @@
 "use client";
-import { FormEvent,useCallback,useEffect,useState } from "react";
-import type { Collection } from "../../collections/model/schema";
-import type { Workspace } from "../model/types";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import { api } from "../../../shared/http/api";
-type Summary=Pick<Workspace,"id"|"name"|"revision"|"updated_at">;
-export function useWorkspaceController(configured:boolean) {
+import { authenticate, getSession, signOut } from "../../auth/client";
+import type { Collection } from "../../collections/public";
+import type { Workspace } from "../model/types";
+import { useWorkspaceViewport } from "./useWorkspaceViewport";
+type Summary = Pick<Workspace, "id" | "name" | "revision" | "updated_at">;
+export function useWorkspaceController(configured: boolean) {
   const [user, setUser] = useState<{ email: string } | null>(null);
   const [loading, setLoading] = useState(configured);
   const [error, setError] = useState("");
@@ -24,20 +26,7 @@ export function useWorkspaceController(configured:boolean) {
       setDeveloper(localStorage.getItem("paw.developerTools") === "true");
     } catch {}
   }, []);
-  useEffect(() => {
-    const viewport = window.visualViewport;
-    const resize = () =>
-      document.documentElement.style.setProperty(
-        "--workspace-height",
-        `${viewport?.height ?? window.innerHeight}px`,
-      );
-    resize();
-    viewport?.addEventListener("resize", resize);
-    return () => {
-      viewport?.removeEventListener("resize", resize);
-      document.documentElement.style.removeProperty("--workspace-height");
-    };
-  }, []);
+  useWorkspaceViewport();
   const [epoch, setEpoch] = useState(0);
   const [selectedCollection, setSelectedCollection] = useState("");
   const [signup, setSignup] = useState(false);
@@ -64,7 +53,7 @@ export function useWorkspaceController(configured:boolean) {
   useEffect(() => {
     if (!configured) return;
     let current = true;
-    api("auth/session")
+    getSession()
       .then(async ({ user }) => {
         if (!current) return;
         setUser(user);
@@ -102,7 +91,7 @@ export function useWorkspaceController(configured:boolean) {
   }
   async function signout() {
     await run(async () => {
-      await api("auth/signout", "POST", {});
+      await signOut();
       setUser(null);
       setActive(null);
       setWorkspaces([]);
@@ -114,12 +103,9 @@ export function useWorkspaceController(configured:boolean) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     await run(async () => {
-      const result = await api(`auth/${signup ? "signup" : "signin"}`, "POST", {
-        email: form.get("email"),
-        password: form.get("password"),
-      });
+      const result = await authenticate(signup, form);
       if (result.authenticated) {
-        const session = await api("auth/session");
+        const session = await getSession();
         setUser(session.user);
         await refreshList();
       } else setNotice(result.message);
@@ -137,7 +123,58 @@ export function useWorkspaceController(configured:boolean) {
     await refreshList();
   }
 
-const currentCollection=collections.find(c=>c.id===selectedCollection);
-return {configured,user,setUser,loading,setLoading,error,setError,notice,setNotice,busy,setBusy,workspaces,setWorkspaces,active,setActive,collections,setCollections,tab,setTab,developer,setDeveloper,interfaceExpanded,setInterfaceExpanded,primaryView,setPrimaryView,epoch,setEpoch,selectedCollection,setSelectedCollection,signup,setSignup,newWorkspace,setNewWorkspace,newCollection,setNewCollection,account,setAccount,renaming,setRenaming,report,run,refreshList,loadWorkspace,open,signout,auth,save,currentCollection};
+  const currentCollection = collections.find(
+    (c) => c.id === selectedCollection,
+  );
+  return {
+    configured,
+    user,
+    setUser,
+    loading,
+    setLoading,
+    error,
+    setError,
+    notice,
+    setNotice,
+    busy,
+    setBusy,
+    workspaces,
+    setWorkspaces,
+    active,
+    setActive,
+    collections,
+    setCollections,
+    tab,
+    setTab,
+    developer,
+    setDeveloper,
+    interfaceExpanded,
+    setInterfaceExpanded,
+    primaryView,
+    setPrimaryView,
+    epoch,
+    setEpoch,
+    selectedCollection,
+    setSelectedCollection,
+    signup,
+    setSignup,
+    newWorkspace,
+    setNewWorkspace,
+    newCollection,
+    setNewCollection,
+    account,
+    setAccount,
+    renaming,
+    setRenaming,
+    report,
+    run,
+    refreshList,
+    loadWorkspace,
+    open,
+    signout,
+    auth,
+    save,
+    currentCollection,
+  };
 }
-export type WorkspaceController=ReturnType<typeof useWorkspaceController>;
+export type WorkspaceController = ReturnType<typeof useWorkspaceController>;

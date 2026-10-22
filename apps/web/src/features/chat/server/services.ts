@@ -1,8 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import "server-only";
 import { z } from "zod";
 import { checked, ServiceError } from "../../../shared/db/result";
-import type { WorkspaceAccess } from "../../workspaces/server/service";
 import { id, name } from "../../../shared/validation/identity";
+import type { WorkspaceAccess } from "../../workspaces/server/public";
 import { messageInput, type Conversation, type Message } from "../model/schema";
 const paging = z
   .object({
@@ -56,8 +57,9 @@ export class ConversationService {
       .eq("workspace_id", workspaceId)
       .order("created_at")
       .order("id")
-      .range(offset, offset + limit - 1);
-    const conversations = checked(result) as Conversation[];
+      .range(offset, offset + limit - 1)
+      .returns<Conversation[]>();
+    const conversations = checked(result)!;
     return {
       conversations,
       nextOffset: offset + limit < (result.count ?? 0) ? offset + limit : null,
@@ -76,9 +78,10 @@ export class ConversationService {
       .eq("workspace_id", workspaceId)
       .eq("conversation_id", conversationId)
       .order("sequence")
-      .range(offset, offset + limit - 1);
+      .range(offset, offset + limit - 1)
+      .returns<Message[]>();
     return {
-      messages: checked(result) as Message[],
+      messages: checked(result)!,
       nextOffset: offset + limit < (result.count ?? 0) ? offset + limit : null,
     };
   }
@@ -98,10 +101,13 @@ export class ConversationService {
     if (before !== undefined)
       query = query.lt("sequence", z.number().int().positive().parse(before));
     const result = checked(
-      await query.order("sequence", { ascending: false }).limit(limit + 1),
-    ) as Message[];
-    const hasOlder = result.length > limit;
-    const messages = result.slice(0, limit).reverse();
+      await query
+        .order("sequence", { ascending: false })
+        .limit(limit + 1)
+        .returns<Message[]>(),
+    );
+    const hasOlder = result!.length > limit;
+    const messages = result!.slice(0, limit).reverse();
     return { messages, before: hasOlder ? messages[0]?.sequence : null };
   }
   async append(

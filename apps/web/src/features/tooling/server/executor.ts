@@ -1,7 +1,8 @@
+import "server-only";
 import { z } from "zod";
 import { ServiceError } from "../../../shared/db/result";
-import type { ToolContext, ToolResult } from "./types";
 import type { ToolRegistry } from "./registry";
+import type { ToolContext, ToolResult } from "./types";
 export class ToolExecutor<Services = unknown> {
   constructor(
     readonly registry: ToolRegistry<Services>,
@@ -25,7 +26,8 @@ export class ToolExecutor<Services = unknown> {
           "Ask the application host for authorized access.",
         );
       const args = tool.inputSchema.parse(input);
-      await this.registry.authorize?.(args,id,this.context);
+      const denied = await this.registry.authorize?.(args, id, this.context);
+      if (denied) return denied;
       if (
         tool.sideEffects === "destructive" &&
         !(await this.context.authorizeDestructive?.(id, structuredClone(args)))
@@ -52,9 +54,7 @@ export class ToolExecutor<Services = unknown> {
         };
       if (error instanceof ServiceError)
         return failure(
-          error.status === 403
-            ? "forbidden"
-            : error.status === 404
+          error.status === 404
             ? "not_found"
             : error.status === 409
               ? "conflict"

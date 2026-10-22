@@ -1,6 +1,6 @@
 "use client";
-import {useState} from "react";
-import type {Field} from "../model/schema";
+import { useState } from "react";
+import type { Field } from "../model/schema";
 export function CollectionDialog({
   error,
   busy,

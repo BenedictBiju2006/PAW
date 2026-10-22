@@ -24,7 +24,10 @@ export type ToolMetadata = {
 };
 export type ToolDefinition<Services = unknown> = ToolMetadata & {
   inputSchema: z.ZodObject;
-  handler: (args: Record<string, unknown>, context: ToolContext<Services>) => Promise<unknown>;
+  handler: (
+    args: Record<string, unknown>,
+    context: ToolContext<Services>,
+  ) => Promise<unknown>;
 };
 export type ToolResult =
   | { ok: true; data: unknown }

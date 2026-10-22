@@ -1,12 +1,15 @@
-import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import "server-only";
+import { z } from "zod";
 import { checked, ServiceError } from "../../../shared/db/result";
 import { id, name } from "../../../shared/validation/identity";
-import { emptyInterface } from "../../interfaces/protocol/document";
-import { upgradeInterface } from "../../interfaces/protocol/legacy";
+import { emptyInterface, upgradeInterface } from "../../interfaces/public";
 export class WorkspaceService {
-constructor(private db:SupabaseClient, private userId:string) {}
-async workspace(workspaceId: string) {
+  constructor(
+    private db: SupabaseClient,
+    private userId: string,
+  ) {}
+  async workspace(workspaceId: string) {
     id.parse(workspaceId);
     const data = checked(
       await this.db
@@ -28,7 +31,7 @@ async workspace(workspaceId: string) {
       };
     }
   }
-async list(offset = 0, limit = 1000) {
+  async list(offset = 0, limit = 1000) {
     z.number().int().min(0).max(100000).parse(offset);
     z.number().int().min(1).max(1000).parse(limit);
     return checked(
@@ -41,7 +44,7 @@ async list(offset = 0, limit = 1000) {
         .range(offset, offset + limit - 1),
     );
   }
-async create(value: unknown) {
+  async create(value: unknown) {
     const workspace = checked(
       await this.db
         .from("workspaces")
@@ -52,7 +55,7 @@ async create(value: unknown) {
     if (!workspace) throw new ServiceError("Workspace creation failed.", 500);
     return this.workspace(workspace.id);
   }
-async rename(workspaceId: string, value: unknown) {
+  async rename(workspaceId: string, value: unknown) {
     await this.workspace(workspaceId);
     checked(
       await this.db
@@ -65,7 +68,7 @@ async rename(workspaceId: string, value: unknown) {
     );
     return this.workspace(workspaceId);
   }
-async remove(workspaceId: string, confirmation: unknown) {
+  async remove(workspaceId: string, confirmation: unknown) {
     await this.workspace(workspaceId);
     if (confirmation !== true)
       throw new ServiceError("Deletion must be confirmed.");
@@ -78,4 +81,4 @@ async remove(workspaceId: string, confirmation: unknown) {
     );
   }
 }
-export type WorkspaceAccess = Pick<WorkspaceService,"workspace">;
+export type WorkspaceAccess = Pick<WorkspaceService, "workspace">;

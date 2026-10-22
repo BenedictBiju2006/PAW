@@ -1,14 +1,15 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import "server-only";
 import { z } from "zod";
 import { checked, ServiceError } from "../../../shared/db/result";
 import {
-  encryptCredential,
-  decryptCredential,
   credentialKey,
+  decryptCredential,
+  encryptCredential,
 } from "./credentials";
 import {
-  providerId,
   providerCatalog,
+  providerId,
   providerModels,
   validateModel,
   validateProviderKey,

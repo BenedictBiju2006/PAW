@@ -1,8 +1,6 @@
+import "server-only";
 
-export function bootstrapPrompt(
-  workspaceId: string,
-  conversationId: string
-) {
+export function bootstrapPrompt(workspaceId: string, conversationId: string) {
   return `You are PAW's AI assistant, operating inside a persistent application environment.
 
 CURRENT CONTEXT

@@ -1,0 +1,1479 @@
+[
+  {
+    "id": "search_tools",
+    "name": "search_tools",
+    "description": "Search available capabilities without loading full schemas.",
+    "purpose": "Discover relevant tools by task and intent.",
+    "keywords": [
+      "discovery",
+      "capabilities"
+    ],
+    "result": "Array of compact tool summaries.",
+    "requiredPermissions": [
+      "read"
+    ],
+    "sideEffects": "none",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "limit": {
+          "default": 10,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 30
+        }
+      },
+      "required": [
+        "query",
+        "limit"
+      ],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "description": "Array of compact tool summaries.",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "data": {
+          "description": "Array of compact tool summaries."
+        },
+        "error": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "ok"
+      ]
+    }
+  },
+  {
+    "id": "describe_tool",
+    "name": "describe_tool",
+    "description": "Retrieve a tool's complete schema and permission requirements.",
+    "purpose": "Learn arguments, results, use cases and side effects before invocation.",
+    "keywords": [
+      "schema",
+      "discovery"
+    ],
+    "result": "Tool metadata, JSON input/output schemas and result description.",
+    "requiredPermissions": [
+      "read"
+    ],
+    "sideEffects": "none",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "toolId": {
+          "type": "string",
+          "maxLength": 100
+        }
+      },
+      "required": [
+        "toolId"
+      ],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "description": "Tool metadata, JSON input/output schemas and result description.",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "data": {
+          "description": "Tool metadata, JSON input/output schemas and result description."
+        },
+        "error": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "ok"
+      ]
+    }
+  },
+  {
+    "id": "list_resources",
+    "name": "list_resources",
+    "description": "List accessible resource metadata with bounded pagination.",
+    "purpose": "Explore workspaces, collections, schemas, records, interfaces, components, catalog and revisions.",
+    "keywords": [
+      "discovery",
+      "resources",
+      "explore"
+    ],
+    "result": "{items: Resource[], nextOffset: number|null}; use inspect_resource for details.",
+    "requiredPermissions": [
+      "read"
+    ],
+    "sideEffects": "none",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "default": "workspaces",
+          "type": "string",
+          "enum": [
+            "workspaces",
+            "collections",
+            "schemas",
+            "records",
+            "interfaces",
+            "components",
+            "catalog",
+            "revisions"
+          ]
+        },
+        "workspaceId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "collectionId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "offset": {
+          "default": 0,
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000
+        },
+        "limit": {
+          "default": 25,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        }
+      },
+      "required": [
+        "kind",
+        "offset",
+        "limit"
+      ],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "description": "{items: Resource[], nextOffset: number|null}; use inspect_resource for details.",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "data": {
+          "description": "{items: Resource[], nextOffset: number|null}; use inspect_resource for details."
+        },
+        "error": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "ok"
+      ]
+    }
+  },
+  {
+    "id": "inspect_resource",
+    "name": "inspect_resource",
+    "description": "Inspect an authorized paw:// resource identifier.",
+    "purpose": "Progressively learn schemas, properties, relationships and supported operations.",
+    "keywords": [
+      "discovery",
+      "resources",
+      "schema"
+    ],
+    "result": "Resource details, relationships and operation identifiers.",
+    "requiredPermissions": [
+      "read"
+    ],
+    "sideEffects": "none",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "uri": {
+          "type": "string",
+          "maxLength": 500
+        }
+      },
+      "required": [
+        "uri"
+      ],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "description": "Resource details, relationships and operation identifiers.",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "data": {
+          "description": "Resource details, relationships and operation identifiers."
+        },
+        "error": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "ok"
+      ]
+    }
+  },
+  {
+    "id": "list_workspaces",
+    "name": "list_workspaces",
+    "description": "List accessible workspace summaries.",
+    "purpose": "Find existing persistent workspaces.",
+    "keywords": [
+      "workspace",
+      "list"
+    ],
+    "result": "Workspace summaries: id, name, revision, updated_at.",
+    "requiredPermissions": [
+      "read"
+    ],
+    "sideEffects": "none",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "offset": {
+          "default": 0,
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000
+        },
+        "limit": {
+          "default": 25,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        }
+      },
+      "required": [
+        "offset",
+        "limit"
+      ],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "description": "Workspace summaries: id, name, revision, updated_at.",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "data": {
+          "description": "Workspace summaries: id, name, revision, updated_at."
+        },
+        "error": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "ok"
+      ]
+    }
+  },
+  {
+    "id": "create_workspace",
+    "name": "create_workspace",
+    "description": "Create an empty persistent workspace.",
+    "purpose": "Start a new application with no domain template.",
+    "keywords": [
+      "workspace",
+      "create",
+      "new"
+    ],
+    "result": "Workspace with id, name, interface and revision.",
+    "requiredPermissions": [
+      "write"
+    ],
+    "sideEffects": "write",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "description": "Workspace with id, name, interface and revision.",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "data": {
+          "description": "Workspace with id, name, interface and revision."
+        },
+        "error": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "ok"
+      ]
+    }
+  },
+  {
+    "id": "inspect_workspace",
+    "name": "inspect_workspace",
+    "description": "Inspect workspace metadata and resource relationships.",
+    "purpose": "Explore a workspace before modifying its resources.",
+    "keywords": [
+      "workspace",
+      "inspect"
+    ],
+    "result": "Workspace metadata, revision, relationships and supported operations.",
+    "requiredPermissions": [
+      "read"
+    ],
+    "sideEffects": "none",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        }
+      },
+      "required": [
+        "workspaceId"
+      ],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "description": "Workspace metadata, revision, relationships and supported operations.",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "data": {
+          "description": "Workspace metadata, revision, relationships and supported operations."
+        },
+        "error": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "ok"
+      ]
+    }
+  },
+  {
+    "id": "rename_workspace",
+    "name": "rename_workspace",
+    "description": "Rename an accessible workspace.",
+    "purpose": "Change the workspace display name.",
+    "keywords": [
+      "workspace",
+      "rename"
+    ],
+    "result": "Updated workspace.",
+    "requiredPermissions": [
+      "write"
+    ],
+    "sideEffects": "write",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        }
+      },
+      "required": [
+        "workspaceId",
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "description": "Updated workspace.",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "data": {
+          "description": "Updated workspace."
+        },
+        "error": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "ok"
+      ]
+    }
+  },
+  {
+    "id": "list_collections",
+    "name": "list_collections",
+    "description": "List a workspace's immutable collection schemas.",
+    "purpose": "Discover the structured data available in a workspace.",
+    "keywords": [
+      "collection",
+      "schema",
+      "list"
+    ],
+    "result": "Bounded collection list with field schemas.",
+    "requiredPermissions": [
+      "read"
+    ],
+    "sideEffects": "none",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "offset": {
+          "default": 0,
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000
+        },
+        "limit": {
+          "default": 25,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        }
+      },
+      "required": [
+        "workspaceId",
+        "offset",
+        "limit"
+      ],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "description": "Bounded collection list with field schemas.",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "data": {
+          "description": "Bounded collection list with field schemas."
+        },
+        "error": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "ok"
+      ]
+    }
+  },
+  {
+    "id": "inspect_collection",
+    "name": "inspect_collection",
+    "description": "Inspect a collection schema.",
+    "purpose": "Learn field keys, types, required flags and enum options before writing records.",
+    "keywords": [
+      "collection",
+      "schema",
+      "inspect"
+    ],
+    "result": "Collection id, workspace_id, name, fields; schema is immutable.",
+    "requiredPermissions": [
+      "read"
+    ],
+    "sideEffects": "none",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "collectionId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "collectionId"
+      ],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "description": "Collection id, workspace_id, name, fields; schema is immutable.",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "data": {
+          "description": "Collection id, workspace_id, name, fields; schema is immutable."
+        },
+        "error": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "ok"
+      ]
+    }
+  },
+  {
+    "id": "create_collection",
+    "name": "create_collection",
+    "description": "Create a typed collection with immutable fields.",
+    "purpose": "Define structured persistent data for forms, tables and charts.",
+    "keywords": [
+      "collection",
+      "create",
+      "fields",
+      "schema"
+    ],
+    "result": "Created collection and field schema.",
+    "requiredPermissions": [
+      "write"
+    ],
+    "sideEffects": "write",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "fields": {
+          "minItems": 1,
+          "maxItems": 30,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$"
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "string",
+                  "number",
+                  "boolean",
+                  "date",
+                  "enum"
+                ]
+              },
+              "required": {
+                "default": false,
+                "type": "boolean"
+              },
+              "options": {
+                "maxItems": 50,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                }
+              }
+            },
+            "required": [
+              "key",
+              "label",
+              "type",
+              "required"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "workspaceId",
+        "name",
+        "fields"
+      ],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "description": "Created collection and field schema.",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "data": {
+          "description": "Created collection and field schema."
+        },
+        "error": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "ok"
+      ]
+    }
+  },
+  {
+    "id": "query_records",
+    "name": "query_records",
+    "description": "Query persistent records with exact filtering, sorting and pagination.",
+    "purpose": "Read collection data separately from schema inspection.",
+    "keywords": [
+      "records",
+      "query",
+      "filter",
+      "sort",
+      "list"
+    ],
+    "result": "{records, total, offset, limit}; records include data and updated_at concurrency token.",
+    "requiredPermissions": [
+      "read"
+    ],
+    "sideEffects": "none",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "collectionId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "offset": {
+          "default": 0,
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000
+        },
+        "limit": {
+          "default": 25,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "sort": {
+          "type": "string"
+        },
+        "direction": {
+          "type": "string",
+          "enum": [
+            "asc",
+            "desc"
+          ]
+        },
+        "filter": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string",
+          "maxLength": 10000
+        }
+      },
+      "required": [
+        "workspaceId",
+        "collectionId",
+        "offset",
+        "limit"
+      ],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "description": "{records, total, offset, limit}; records include data and updated_at concurrency token.",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "data": {
+          "description": "{records, total, offset, limit}; records include data and updated_at concurrency token."
+        },
+        "error": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "ok"
+      ]
+    }
+  },
+  {
+    "id": "create_record",
+    "name": "create_record",
+    "description": "Create a validated collection record.",
+    "purpose": "Persist structured data according to the immutable field schema.",
+    "keywords": [
+      "records",
+      "create",
+      "insert"
+    ],
+    "result": "Created record including id, data and updated_at.",
+    "requiredPermissions": [
+      "write"
+    ],
+    "sideEffects": "write",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "collectionId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "data": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          }
+        }
+      },
+      "required": [
+        "workspaceId",
+        "collectionId",
+        "data"
+      ],
+      "additionalProperties": false,
+      "$defs": {
+        "__schema0": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/__schema0"
+              }
+            },
+            {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              }
+            }
+          ]
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "description": "Created record including id, data and updated_at.",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "data": {
+          "description": "Created record including id, data and updated_at."
+        },
+        "error": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "ok"
+      ]
+    }
+  },
+  {
+    "id": "update_record",
+    "name": "update_record",
+    "description": "Update a record with its expected updated_at timestamp.",
+    "purpose": "Edit persistent data without overwriting concurrent changes.",
+    "keywords": [
+      "records",
+      "update",
+      "edit",
+      "concurrency"
+    ],
+    "result": "Updated record; stale timestamps return conflict.",
+    "requiredPermissions": [
+      "write"
+    ],
+    "sideEffects": "write",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "collectionId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "recordId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "data": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          }
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "collectionId",
+        "recordId",
+        "data",
+        "updatedAt"
+      ],
+      "additionalProperties": false,
+      "$defs": {
+        "__schema0": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/__schema0"
+              }
+            },
+            {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              }
+            }
+          ]
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "description": "Updated record; stale timestamps return conflict.",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "data": {
+          "description": "Updated record; stale timestamps return conflict."
+        },
+        "error": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "ok"
+      ]
+    }
+  },
+  {
+    "id": "delete_record",
+    "name": "delete_record",
+    "description": "Delete a record after trusted user confirmation.",
+    "purpose": "Remove a specific record; model arguments cannot provide confirmation.",
+    "keywords": [
+      "records",
+      "delete",
+      "remove"
+    ],
+    "result": "null on success; confirmation_required unless the trusted host obtains user approval.",
+    "requiredPermissions": [
+      "delete"
+    ],
+    "sideEffects": "destructive",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "collectionId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "recordId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "collectionId",
+        "recordId"
+      ],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "description": "null on success; confirmation_required unless the trusted host obtains user approval.",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "data": {
+          "description": "null on success; confirmation_required unless the trusted host obtains user approval."
+        },
+        "error": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "ok"
+      ]
+    }
+  },
+  {
+    "id": "aggregate_records",
+    "name": "aggregate_records",
+    "description": "Aggregate a field across a collection.",
+    "purpose": "Compute full-collection counts and numeric aggregates for charts.",
+    "keywords": [
+      "records",
+      "aggregate",
+      "chart",
+      "count"
+    ],
+    "result": "Counts and numeric aggregates from the authorized collection.",
+    "requiredPermissions": [
+      "read"
+    ],
+    "sideEffects": "none",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "collectionId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "field": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "workspaceId",
+        "collectionId",
+        "field"
+      ],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "description": "Counts and numeric aggregates from the authorized collection.",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "data": {
+          "description": "Counts and numeric aggregates from the authorized collection."
+        },
+        "error": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "ok"
+      ]
+    }
+  },
+  {
+    "id": "get_catalog",
+    "name": "get_catalog",
+    "description": "Retrieve the official PAW A2UI component catalog.",
+    "purpose": "Discover supported component schemas, properties and actions before building an interface.",
+    "keywords": [
+      "a2ui",
+      "interface",
+      "catalog",
+      "components"
+    ],
+    "result": "Official A2UI catalog JSON with components and supported PAW actions.",
+    "requiredPermissions": [
+      "read"
+    ],
+    "sideEffects": "none",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "description": "Official A2UI catalog JSON with components and supported PAW actions.",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "data": {
+          "description": "Official A2UI catalog JSON with components and supported PAW actions."
+        },
+        "error": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "ok"
+      ]
+    }
+  },
+  {
+    "id": "inspect_component",
+    "name": "inspect_component",
+    "description": "Inspect a supported component type and its property schema.",
+    "purpose": "Learn how to construct a catalog component such as CollectionForm or DataTable.",
+    "keywords": [
+      "a2ui",
+      "components",
+      "properties",
+      "schema"
+    ],
+    "result": "Component JSON schema.",
+    "requiredPermissions": [
+      "read"
+    ],
+    "sideEffects": "none",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "component": {
+          "type": "string",
+          "maxLength": 100
+        }
+      },
+      "required": [
+        "component"
+      ],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "description": "Component JSON schema.",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "data": {
+          "description": "Component JSON schema."
+        },
+        "error": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "ok"
+      ]
+    }
+  },
+  {
+    "id": "inspect_interface",
+    "name": "inspect_interface",
+    "description": "Retrieve the current A2UI interface, revision and reconstructed components.",
+    "purpose": "Inspect authoritative UI state before appending messages or saving a definition.",
+    "keywords": [
+      "a2ui",
+      "interface",
+      "inspect",
+      "revision"
+    ],
+    "result": "{definition, revision, surfaces}; each surface includes current component properties.",
+    "requiredPermissions": [
+      "read"
+    ],
+    "sideEffects": "none",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        }
+      },
+      "required": [
+        "workspaceId"
+      ],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "description": "{definition, revision, surfaces}; each surface includes current component properties.",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "data": {
+          "description": "{definition, revision, surfaces}; each surface includes current component properties."
+        },
+        "error": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "ok"
+      ]
+    }
+  },
+  {
+    "id": "apply_interface_messages",
+    "name": "apply_interface_messages",
+    "description": "Apply official A2UI messages incrementally with an expected revision.",
+    "purpose": "Mutate current components or data bindings through the existing validation pipeline.",
+    "keywords": [
+      "a2ui",
+      "interface",
+      "messages",
+      "update"
+    ],
+    "result": "Saved workspace with new interface revision; invalid A2UI or stale revisions fail atomically.",
+    "requiredPermissions": [
+      "write"
+    ],
+    "sideEffects": "write",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "messages": {
+          "minItems": 1,
+          "maxItems": 200,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          }
+        },
+        "revision": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "workspaceId",
+        "messages",
+        "revision"
+      ],
+      "additionalProperties": false,
+      "$defs": {
+        "__schema0": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/__schema0"
+              }
+            },
+            {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              }
+            }
+          ]
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "description": "Saved workspace with new interface revision; invalid A2UI or stale revisions fail atomically.",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "data": {
+          "description": "Saved workspace with new interface revision; invalid A2UI or stale revisions fail atomically."
+        },
+        "error": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "ok"
+      ]
+    }
+  },
+  {
+    "id": "save_interface",
+    "name": "save_interface",
+    "description": "Save a complete validated A2UI definition with an expected revision.",
+    "purpose": "Construct or restore the workspace interface without changing collection data.",
+    "keywords": [
+      "a2ui",
+      "interface",
+      "save",
+      "build"
+    ],
+    "result": "Saved workspace with incremented revision.",
+    "requiredPermissions": [
+      "write"
+    ],
+    "sideEffects": "write",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "definition": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "revision": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "workspaceId",
+        "definition",
+        "revision"
+      ],
+      "additionalProperties": false,
+      "$defs": {
+        "__schema0": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/__schema0"
+              }
+            },
+            {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              }
+            }
+          ]
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "description": "Saved workspace with incremented revision.",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "data": {
+          "description": "Saved workspace with incremented revision."
+        },
+        "error": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "ok"
+      ]
+    }
+  },
+  {
+    "id": "list_revisions",
+    "name": "list_revisions",
+    "description": "List original saved interface revisions.",
+    "purpose": "Inspect revision history and recover previous definitions.",
+    "keywords": [
+      "a2ui",
+      "interface",
+      "history",
+      "revision"
+    ],
+    "result": "Bounded revisions with revision number, definition and created_at.",
+    "requiredPermissions": [
+      "read"
+    ],
+    "sideEffects": "none",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "offset": {
+          "default": 0,
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000
+        },
+        "limit": {
+          "default": 25,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        }
+      },
+      "required": [
+        "workspaceId",
+        "offset",
+        "limit"
+      ],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "description": "Bounded revisions with revision number, definition and created_at.",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "data": {
+          "description": "Bounded revisions with revision number, definition and created_at."
+        },
+        "error": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "ok"
+      ]
+    }
+  }
+]

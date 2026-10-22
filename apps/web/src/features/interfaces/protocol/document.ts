@@ -1,12 +1,12 @@
-import { z } from "zod";
+import type { A2uiMessage } from "@a2ui/web_core/v0_9";
 import {
   A2uiMessageListWrapperSchema,
   MessageProcessor,
   STRICT_VALIDATION,
 } from "@a2ui/web_core/v0_9";
-import type { A2uiMessage, ActionListener } from "@a2ui/web_core/v0_9";
 import { isSafeRegex } from "@a2ui/web_core/v0_9/basic_catalog";
-import type { Collection } from "../../collections/model/schema";
+import { z } from "zod";
+import type { Collection } from "../../collections/public";
 import { CATALOG_ID, PROTOCOL, schemaCatalog } from "./catalog";
 export type Interface = { messages: A2uiMessage[] };
 export type Component = {

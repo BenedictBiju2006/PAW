@@ -1,50 +1,50 @@
 "use client";
 import {
-  createContext,
-  useContext,
-  useEffect,
-  useState,
-  Fragment,
-  type ReactNode,
-} from "react";
-import {
   A2uiSurface,
   createComponentImplementation,
   type ReactCatalogComponent,
 } from "@a2ui/react/v0_9";
+import type { ActionPayload, ResolvedChildRef } from "@a2ui/web_core/v0_9";
 import {
   Catalog,
   MessageProcessor,
   STRICT_VALIDATION,
 } from "@a2ui/web_core/v0_9";
-import type { ActionPayload, ResolvedChildRef } from "@a2ui/web_core/v0_9";
 import {
-  TextApi,
-  RowApi,
-  ColumnApi,
-  CardApi,
   ButtonApi,
-  TextFieldApi,
+  CardApi,
   CheckBoxApi,
-  TabsApi,
-  ListApi,
+  ColumnApi,
   DividerApi,
+  ListApi,
+  RowApi,
+  TabsApi,
+  TextApi,
+  TextFieldApi,
 } from "@a2ui/web_core/v0_9/basic_catalog";
 import {
+  createContext,
+  Fragment,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
+import { api } from "../../../shared/http/api";
+import { DataView, RecordForm } from "../../collections/client";
+import type { Collection } from "../../collections/public";
+import {
   CATALOG_ID,
-  PROTOCOL,
+  CollectionChartApi,
   CollectionFormApi,
   DataTableApi,
-  CollectionChartApi,
+  PROTOCOL,
 } from "../protocol/catalog";
 import {
   parseInterface,
   validateBindings,
   type Interface,
 } from "../protocol/document";
-import type { Collection } from "../../collections/model/schema";
-import { api } from "../../../shared/http/api";
-import { DataView, RecordForm } from "../../collections/components/DataView";
 
 type Runtime = {
   workspaceId: string;

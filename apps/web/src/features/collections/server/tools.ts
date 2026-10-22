@@ -1,16 +1,23 @@
+import "server-only";
 import { z } from "zod";
-import { ServiceError } from "../../../shared/db/result";
-import type { ToolRegistry } from "../../tooling/server/registry";
-import { registrar } from "../../tooling/server/register";
-import type { CollectionService } from "./service";
+import type { ToolRegistry } from "../../tooling/server/public";
+import { registrar } from "../../tooling/server/public";
 import { fieldsSchema } from "../model/schema";
-const workspaceId=z.uuid(),collectionId=z.uuid(),recordId=z.uuid();
-const page={offset:z.number().int().min(0).max(100000).default(0),limit:z.number().int().min(1).max(100).default(25)};
-const revision=z.number().int().positive();
-const data=z.record(z.string(),z.json());
-export function registerCollectionsTools<Services extends Pick<CollectionService, keyof CollectionService>>(registry:ToolRegistry<Services>) {
-const add=registrar(registry);
-add(
+import type { CollectionService } from "./service";
+const workspaceId = z.uuid(),
+  collectionId = z.uuid(),
+  recordId = z.uuid();
+const page = {
+  offset: z.number().int().min(0).max(100000).default(0),
+  limit: z.number().int().min(1).max(100).default(25),
+};
+const revision = z.number().int().positive();
+const data = z.record(z.string(), z.json());
+export function registerCollectionsTools<
+  Services extends Pick<CollectionService, keyof CollectionService>,
+>(registry: ToolRegistry<Services>) {
+  const add = registrar(registry);
+  add(
     "inspect_collection",
     "Inspect a collection schema.",
     "Learn field keys, types, required flags and enum options before writing records.",
@@ -19,7 +26,7 @@ add(
     "Collection id, workspace_id, name, fields; schema is immutable.",
     async (a, c) => c.service.collection(a.workspaceId, a.collectionId),
   );
-add(
+  add(
     "create_collection",
     "Create a typed collection with immutable fields.",
     "Define structured persistent data for forms, tables and charts.",
@@ -39,7 +46,7 @@ add(
       }),
     "write",
   );
-add(
+  add(
     "query_records",
     "Query persistent records with exact filtering, sorting and pagination.",
     "Read collection data separately from schema inspection.",
@@ -61,7 +68,7 @@ add(
       return c.service.records(workspaceId, collectionId, options);
     },
   );
-add(
+  add(
     "create_record",
     "Create a validated collection record.",
     "Persist structured data according to the immutable field schema.",
@@ -72,7 +79,7 @@ add(
       c.service.writeRecord(a.workspaceId, a.collectionId, a.data),
     "write",
   );
-add(
+  add(
     "update_record",
     "Update a record with its expected updated_at timestamp.",
     "Edit persistent data without overwriting concurrent changes.",
@@ -97,7 +104,7 @@ add(
       ),
     "write",
   );
-add(
+  add(
     "delete_record",
     "Delete a record after trusted user confirmation.",
     "Remove a specific record; model arguments cannot provide confirmation.",
@@ -108,7 +115,7 @@ add(
       c.service.deleteRecord(a.workspaceId, a.collectionId, a.recordId, true),
     "delete",
   );
-add(
+  add(
     "aggregate_records",
     "Aggregate a field across a collection.",
     "Compute full-collection counts and numeric aggregates for charts.",
@@ -118,5 +125,14 @@ add(
       .strict(),
     "Counts and numeric aggregates from the authorized collection.",
     async (a, c) => c.service.aggregate(a.workspaceId, a.collectionId, a.field),
+  );
+  add(
+    "list_collections",
+    "List a workspace's immutable collection schemas.",
+    "Discover the structured data available in a workspace.",
+    ["collection", "schema", "list"],
+    z.object({ workspaceId, ...page }).strict(),
+    "Bounded collection list with field schemas.",
+    async (a, c) => c.service.collections(a.workspaceId, a.offset, a.limit),
   );
 }

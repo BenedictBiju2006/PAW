@@ -1,8 +1,15 @@
-import { createMcpAdapter as adapter } from "../features/tooling/server/mcp";
-import type { ToolRegistry } from "../features/tooling/server/registry";
-import type { ToolContext } from "../features/tooling/server/types";
+import "server-only";
+import type { ToolContext } from "../features/tooling/public";
+import type { ToolRegistry } from "../features/tooling/server/public";
+import { createMcpAdapter as adapter } from "../features/tooling/server/public";
 import type { WorkspaceServices } from "./services";
-export function createMcpAdapter(registry:ToolRegistry<WorkspaceServices>, context:ToolContext<WorkspaceServices>) {return adapter(registry,context,{defaultKind:context.workspaceId?"collections":"workspaces", templates:[
+export function createMcpAdapter(
+  registry: ToolRegistry<WorkspaceServices>,
+  context: ToolContext<WorkspaceServices>,
+) {
+  return adapter(registry, context, {
+    defaultKind: context.workspaceId ? "collections" : "workspaces",
+    templates: [
       {
         uriTemplate: "paw://workspaces/{workspaceId}",
         name: "Workspace",
@@ -36,4 +43,6 @@ export function createMcpAdapter(registry:ToolRegistry<WorkspaceServices>, conte
         name: "Interface revision",
         mimeType: "application/json",
       },
-    ]});}
+    ],
+  });
+}

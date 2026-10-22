@@ -1,15 +1,19 @@
+import "server-only";
 import { z } from "zod";
-import type { ToolContext, Permission, ToolMetadata } from "./types";
 import type { ToolRegistry } from "./registry";
-export function registrar<Services>(registry:ToolRegistry<Services>) {
-function add<S extends z.ZodObject>(
+import type { Permission, ToolContext, ToolMetadata } from "./types";
+export function registrar<Services>(registry: ToolRegistry<Services>) {
+  function add<S extends z.ZodObject>(
     id: string,
     description: string,
     purpose: string,
     keywords: string[],
     schema: S,
     result: string,
-    handler: (args: z.infer<S>, context: ToolContext<Services>) => Promise<unknown>,
+    handler: (
+      args: z.infer<S>,
+      context: ToolContext<Services>,
+    ) => Promise<unknown>,
     permission: Permission = "read",
   ) {
     const metadata: ToolMetadata = {
@@ -29,5 +33,5 @@ function add<S extends z.ZodObject>(
     };
     registry.register(metadata, schema, handler);
   }
-return add;
+  return add;
 }

@@ -1,8 +1,9 @@
-import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { createHash } from "node:crypto";
+import "server-only";
 import { z } from "zod";
 import { checked, ServiceError } from "../../../shared/db/result";
-import { messageInput } from "../../chat/model/schema";
+import { messageInput } from "../../chat/public";
 export type TurnStatus =
   "running" | "completed" | "failed" | "cancelled" | "limited" | "interrupted";
 export type Turn = {

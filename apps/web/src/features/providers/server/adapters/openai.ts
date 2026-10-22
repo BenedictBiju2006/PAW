@@ -1,5 +1,6 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import { streamText } from "ai";
+import "server-only";
 import type { ModelProvider } from "../../model/provider";
 export const openaiProvider: ModelProvider = {
   id: "openai",

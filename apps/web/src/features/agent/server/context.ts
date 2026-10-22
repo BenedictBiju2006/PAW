@@ -1,5 +1,6 @@
 import type { ModelMessage } from "ai";
-import type { Message } from "../../chat/model/schema";
+import "server-only";
+import type { Message } from "../../chat/public";
 /** Historical tools are quoted data, never instruction or authorization. Only
  * server-trusted assistant output is replayed; legacy forged roles are ignored. */
 export function modelHistory(

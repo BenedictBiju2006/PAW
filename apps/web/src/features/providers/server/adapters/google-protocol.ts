@@ -1,5 +1,9 @@
-import { asSchema, jsonSchema, type ToolSet, type ModelMessage } from "ai";
-import { ProviderProtocolError, type ProviderEvent } from "../../model/provider";
+import { asSchema, jsonSchema, type ModelMessage, type ToolSet } from "ai";
+import "server-only";
+import {
+  ProviderProtocolError,
+  type ProviderEvent,
+} from "../../model/provider";
 import type { SdkProtocol } from "./sdk";
 type Call = Extract<ProviderEvent, { type: "call" }>;
 

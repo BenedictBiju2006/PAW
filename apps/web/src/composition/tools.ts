@@ -1,22 +1,45 @@
+import "server-only";
 import { z } from "zod";
+import { registerCollectionsTools } from "../features/collections/server/public";
+import { registerInterfacesTools } from "../features/interfaces/server/public";
+import { registrar, ToolRegistry } from "../features/tooling/server/public";
+import { registerWorkspacesTools } from "../features/workspaces/server/public";
 import { ServiceError } from "../shared/db/result";
-import { ToolRegistry } from "../features/tooling/server/registry";
-import { registrar } from "../features/tooling/server/register";
-import { registerWorkspacesTools } from "../features/workspaces/server/tools";
-import { registerCollectionsTools } from "../features/collections/server/tools";
-import { registerInterfacesTools } from "../features/interfaces/server/tools";
-import { inspectResource,listResources,resourceListSchema } from "./resources";
+import {
+  inspectResource,
+  listResources,
+  resourceListSchema,
+} from "./resources";
 import type { WorkspaceServices } from "./services";
 export function createToolRegistry() {
-const registry=new ToolRegistry<WorkspaceServices>(async (args,id,context)=>{
-if(context.workspaceId){
-await context.service.workspace(context.workspaceId);
-if(args.workspaceId && args.workspaceId!==context.workspaceId) throw new ServiceError("Tool targets a different workspace.",403);
-if(id==="create_workspace") throw new ServiceError("Cannot create workspaces in a workspace-scoped session.",403);
-}
-});
-const add=registrar(registry);
-add(
+  const registry = new ToolRegistry<WorkspaceServices>(
+    async (args, id, context) => {
+      if (context.workspaceId) {
+        await context.service.workspace(context.workspaceId);
+        if (args.workspaceId && args.workspaceId !== context.workspaceId)
+          return {
+            ok: false as const,
+            error: {
+              code: "forbidden",
+              message: "Tool targets a different workspace.",
+              guidance: "Use the current workspace identity.",
+            },
+          };
+        if (id === "create_workspace")
+          return {
+            ok: false as const,
+            error: {
+              code: "forbidden",
+              message:
+                "Cannot create workspaces in a workspace-scoped session.",
+              guidance: "Use an account-scoped session.",
+            },
+          };
+      }
+    },
+  );
+  const add = registrar(registry);
+  add(
     "search_tools",
     "Search available capabilities without loading full schemas.",
     "Discover relevant tools by task and intent.",
@@ -30,7 +53,7 @@ add(
     "Array of compact tool summaries.",
     async (a) => registry.search(a.query, a.limit),
   );
-add(
+  add(
     "describe_tool",
     "Retrieve a tool's complete schema and permission requirements.",
     "Learn arguments, results, use cases and side effects before invocation.",
@@ -43,7 +66,7 @@ add(
       return registry.describe(a.toolId);
     },
   );
-add(
+  add(
     "list_resources",
     "List accessible resource metadata with bounded pagination.",
     "Explore workspaces, collections, schemas, records, interfaces, components, catalog and revisions.",
@@ -52,7 +75,7 @@ add(
     "{items: Resource[], nextOffset: number|null}; use inspect_resource for details.",
     listResources,
   );
-add(
+  add(
     "inspect_resource",
     "Inspect an authorized paw:// resource identifier.",
     "Progressively learn schemas, properties, relationships and supported operations.",
@@ -61,8 +84,8 @@ add(
     "Resource details, relationships and operation identifiers.",
     async (a, c) => inspectResource(a.uri, c),
   );
-registerWorkspacesTools(registry,inspectResource);
-registerCollectionsTools(registry);
-registerInterfacesTools(registry);
-return registry;
+  registerWorkspacesTools(registry, inspectResource);
+  registerCollectionsTools(registry);
+  registerInterfacesTools(registry);
+  return registry;
 }

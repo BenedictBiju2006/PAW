@@ -1,23 +1,29 @@
-import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import "server-only";
+import { z } from "zod";
 import { checked, ServiceError } from "../../../shared/db/result";
-import { upgradeInterface } from "../protocol/legacy";
-import { inspectInterface, validateBindings } from "../protocol/document";
+import type { CollectionService } from "../../collections/server/public";
+import type { WorkspaceAccess } from "../../workspaces/server/public";
 import { catalogDocument } from "../protocol/catalog";
-import type { WorkspaceAccess } from "../../workspaces/server/service";
-import type { CollectionService } from "../../collections/server/service";
+import { inspectInterface, validateBindings } from "../protocol/document";
+import { upgradeInterface } from "../protocol/legacy";
 export class InterfaceService {
-constructor(private db:SupabaseClient, private userId:string, private workspaces:WorkspaceAccess, private collectionService:Pick<CollectionService,"collections">) {}
-catalog() {
+  constructor(
+    private db: SupabaseClient,
+    private userId: string,
+    private workspaces: WorkspaceAccess,
+    private collectionService: Pick<CollectionService, "collections">,
+  ) {}
+  catalog() {
     return catalogDocument();
   }
-async inspect(workspaceId: string) {
+  async inspect(workspaceId: string) {
     const workspace = await this.workspaces.workspace(workspaceId);
     if (workspace.interfaceError)
       throw new ServiceError(workspace.interfaceError);
     return inspectInterface(workspace.interface);
   }
-async applyInterfaceMessages(
+  async applyInterfaceMessages(
     workspaceId: string,
     messages: unknown,
     revision: unknown,
@@ -33,7 +39,7 @@ async applyInterfaceMessages(
       revision,
     );
   }
-async revision(workspaceId: string, revision: number) {
+  async revision(workspaceId: string, revision: number) {
     await this.workspaces.workspace(workspaceId);
     z.number().int().positive().parse(revision);
     const result = checked(
@@ -47,7 +53,7 @@ async revision(workspaceId: string, revision: number) {
     if (!result) throw new ServiceError("Revision not found.", 404);
     return result;
   }
-async saveInterface(workspaceId: string, input: unknown, revision: unknown) {
+  async saveInterface(workspaceId: string, input: unknown, revision: unknown) {
     await this.workspaces.workspace(workspaceId);
     const collections = await this.collectionService.collections(workspaceId);
     let definition;
@@ -75,7 +81,7 @@ async saveInterface(workspaceId: string, input: unknown, revision: unknown) {
       );
     return result;
   }
-async revisions(workspaceId: string, offset = 0, limit = 20) {
+  async revisions(workspaceId: string, offset = 0, limit = 20) {
     z.number().int().min(0).max(100000).parse(offset);
     z.number().int().min(1).max(100).parse(limit);
     await this.workspaces.workspace(workspaceId);

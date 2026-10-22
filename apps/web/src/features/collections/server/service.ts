@@ -1,12 +1,21 @@
-import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import "server-only";
+import { z } from "zod";
 import { checked, ServiceError } from "../../../shared/db/result";
 import { id, name } from "../../../shared/validation/identity";
-import { fieldsSchema, validateData, type Collection } from "../model/schema";
-import type { WorkspaceAccess } from "../../workspaces/server/service";
+import type { WorkspaceAccess } from "../../workspaces/server/public";
+import {
+  fieldsSchema,
+  validateData,
+  type Collection,
+  type DataRecord,
+} from "../model/schema";
 export class CollectionService {
-constructor(private db:SupabaseClient, private workspaces:WorkspaceAccess) {}
-async collections(
+  constructor(
+    private db: SupabaseClient,
+    private workspaces: WorkspaceAccess,
+  ) {}
+  async collections(
     workspaceId: string,
     offset = 0,
     limit = 1000,
@@ -21,10 +30,11 @@ async collections(
         .eq("workspace_id", workspaceId)
         .order("created_at")
         .order("id")
-        .range(offset, offset + limit - 1),
-    ) as Collection[];
+        .range(offset, offset + limit - 1)
+        .returns<Collection[]>(),
+    )!;
   }
-async createCollection(workspaceId: string, input: unknown) {
+  async createCollection(workspaceId: string, input: unknown) {
     await this.workspaces.workspace(workspaceId);
     const value = z
       .object({ name, fields: fieldsSchema })
@@ -35,10 +45,10 @@ async createCollection(workspaceId: string, input: unknown) {
         .from("collections")
         .insert({ ...value, workspace_id: workspaceId })
         .select("*")
-        .single(),
+        .single<Collection>(),
     );
   }
-async collection(workspaceId: string, collectionId: string) {
+  async collection(workspaceId: string, collectionId: string) {
     await this.workspaces.workspace(workspaceId);
     id.parse(collectionId);
     const collection = checked(
@@ -47,12 +57,12 @@ async collection(workspaceId: string, collectionId: string) {
         .select("*")
         .eq("workspace_id", workspaceId)
         .eq("id", collectionId)
-        .maybeSingle(),
-    ) as Collection | null;
+        .maybeSingle<Collection>(),
+    );
     if (!collection) throw new ServiceError("Collection not found.", 404);
     return collection;
   }
-async records(
+  async records(
     workspaceId: string,
     collectionId: string,
     input: unknown = {},
@@ -97,7 +107,8 @@ async records(
     } else query = query.order("created_at", { ascending: false });
     const result = await query
       .order("id")
-      .range(options.offset, options.offset + options.limit - 1);
+      .range(options.offset, options.offset + options.limit - 1)
+      .returns<DataRecord[]>();
     return {
       records: checked(result),
       total: result.count ?? 0,
@@ -105,7 +116,7 @@ async records(
       limit: options.limit,
     };
   }
-async record(workspaceId: string, collectionId: string, recordId: string) {
+  async record(workspaceId: string, collectionId: string, recordId: string) {
     await this.collection(workspaceId, collectionId);
     id.parse(recordId);
     const record = checked(
@@ -115,12 +126,12 @@ async record(workspaceId: string, collectionId: string, recordId: string) {
         .eq("workspace_id", workspaceId)
         .eq("collection_id", collectionId)
         .eq("id", recordId)
-        .maybeSingle(),
+        .maybeSingle<DataRecord>(),
     );
     if (!record) throw new ServiceError("Record not found.", 404);
     return record;
   }
-async aggregate(workspaceId: string, collectionId: string, fieldKey: string) {
+  async aggregate(workspaceId: string, collectionId: string, fieldKey: string) {
     const collection = await this.collection(workspaceId, collectionId);
     if (!collection.fields.some((f) => f.key === fieldKey))
       throw new ServiceError("Unknown field.");
@@ -132,7 +143,7 @@ async aggregate(workspaceId: string, collectionId: string, fieldKey: string) {
       }),
     );
   }
-async writeRecord(
+  async writeRecord(
     workspaceId: string,
     collectionId: string,
     input: unknown,
@@ -155,7 +166,7 @@ async writeRecord(
           .eq("collection_id", collectionId)
           .eq("updated_at", expected)
           .select("*")
-          .maybeSingle(),
+          .maybeSingle<DataRecord>(),
       );
       if (!record)
         throw new ServiceError(
@@ -173,10 +184,10 @@ async writeRecord(
           data,
         })
         .select("*")
-        .single(),
+        .single<DataRecord>(),
     );
   }
-async deleteRecord(
+  async deleteRecord(
     workspaceId: string,
     collectionId: string,
     recordId: string,

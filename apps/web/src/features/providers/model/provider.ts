@@ -1,4 +1,4 @@
-import type { ModelMessage, ToolSet, ToolCallPart } from "ai";
+import type { ModelMessage, ToolCallPart, ToolSet } from "ai";
 export type ProviderEvent =
   | { type: "text"; text: string }
   | {

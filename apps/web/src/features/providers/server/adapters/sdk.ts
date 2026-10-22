@@ -1,4 +1,5 @@
 import { streamText, type LanguageModel } from "ai";
+import "server-only";
 import type { ModelProvider, ProviderEvent } from "../../model/provider";
 export type SdkInput = Parameters<ModelProvider["stream"]>[0];
 type CallMetadata = NonNullable<

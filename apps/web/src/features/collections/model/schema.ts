@@ -70,3 +70,9 @@ export type DataRecord = {
   data: RecordData;
   updated_at: string;
 };
+
+export type CollectionAggregation = {
+  count: number;
+  distinctValues: number;
+  buckets: { value: unknown; count: number }[];
+};

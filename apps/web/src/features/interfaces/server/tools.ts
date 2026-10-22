@@ -1,16 +1,26 @@
+import "server-only";
 import { z } from "zod";
 import { ServiceError } from "../../../shared/db/result";
-import type { ToolRegistry } from "../../tooling/server/registry";
-import { registrar } from "../../tooling/server/register";
+import type { ToolRegistry } from "../../tooling/server/public";
+import { registrar } from "../../tooling/server/public";
+import type { WorkspaceAccess } from "../../workspaces/server/public";
+import { catalogComponents } from "../protocol/catalog";
 import type { InterfaceService } from "./service";
-import type { WorkspaceAccess } from "../../workspaces/server/service";
-const workspaceId=z.uuid(),collectionId=z.uuid(),recordId=z.uuid();
-const page={offset:z.number().int().min(0).max(100000).default(0),limit:z.number().int().min(1).max(100).default(25)};
-const revision=z.number().int().positive();
-const data=z.record(z.string(),z.json());
-export function registerInterfacesTools<Services extends Pick<InterfaceService, keyof InterfaceService> & WorkspaceAccess>(registry:ToolRegistry<Services>) {
-const add=registrar(registry);
-add(
+const workspaceId = z.uuid(),
+  collectionId = z.uuid(),
+  recordId = z.uuid();
+const page = {
+  offset: z.number().int().min(0).max(100000).default(0),
+  limit: z.number().int().min(1).max(100).default(25),
+};
+const revision = z.number().int().positive();
+const data = z.record(z.string(), z.json());
+export function registerInterfacesTools<
+  Services extends Pick<InterfaceService, keyof InterfaceService> &
+    WorkspaceAccess,
+>(registry: ToolRegistry<Services>) {
+  const add = registrar(registry);
+  add(
     "get_catalog",
     "Retrieve the official PAW A2UI component catalog.",
     "Discover supported component schemas, properties and actions before building an interface.",
@@ -19,7 +29,7 @@ add(
     "Official A2UI catalog JSON with components and supported PAW actions.",
     async (a, c) => c.service.catalog(),
   );
-add(
+  add(
     "inspect_component",
     "Inspect a supported component type and its property schema.",
     "Learn how to construct a catalog component such as CollectionForm or DataTable.",
@@ -27,13 +37,13 @@ add(
     z.object({ component: z.string().max(100) }).strict(),
     "Component JSON schema.",
     async (a, c) => {
-      const components = (c.service.catalog() as any).components;
+      const components = catalogComponents();
       if (!Object.hasOwn(components, a.component))
         throw new ServiceError("Unknown component type.", 404);
       return components[a.component];
     },
   );
-add(
+  add(
     "inspect_interface",
     "Retrieve the current A2UI interface, revision and reconstructed components.",
     "Inspect authoritative UI state before appending messages or saving a definition.",
@@ -49,7 +59,7 @@ add(
       };
     },
   );
-add(
+  add(
     "apply_interface_messages",
     "Apply official A2UI messages incrementally with an expected revision.",
     "Mutate current components or data bindings through the existing validation pipeline.",
@@ -66,7 +76,7 @@ add(
       c.service.applyInterfaceMessages(a.workspaceId, a.messages, a.revision),
     "write",
   );
-add(
+  add(
     "save_interface",
     "Save a complete validated A2UI definition with an expected revision.",
     "Construct or restore the workspace interface without changing collection data.",
@@ -77,7 +87,7 @@ add(
       c.service.saveInterface(a.workspaceId, a.definition, a.revision),
     "write",
   );
-add(
+  add(
     "list_revisions",
     "List original saved interface revisions.",
     "Inspect revision history and recover previous definitions.",

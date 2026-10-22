@@ -1,6 +1,10 @@
 "use client";
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
+import { api } from "../../../shared/http/api";
+import type { Collection } from "../../collections/public";
+import type { Workspace } from "../../workspaces/public";
+import { catalogDocument } from "../protocol/catalog";
 import {
   appendComponents,
   parseInterface,
@@ -8,10 +12,6 @@ import {
   type Interface,
 } from "../protocol/document";
 import { upgradeInterface } from "../protocol/legacy";
-import { catalogDocument } from "../protocol/catalog";
-import type { Collection } from "../../collections/model/schema";
-import type { Workspace } from "../../workspaces/model/types";
-import { api } from "../../../shared/http/api";
 const Runtime = dynamic(() => import("./A2UIRuntime"), { ssr: false });
 export default function InterfaceBuilder({
   workspace,

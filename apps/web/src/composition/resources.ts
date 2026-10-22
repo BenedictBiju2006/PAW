@@ -1,8 +1,10 @@
+import "server-only";
 import { z } from "zod";
+import { catalogComponents } from "../features/interfaces/public";
+import type { ToolContext as BaseContext } from "../features/tooling/public";
 import { ServiceError } from "../shared/db/result";
-import type { ToolContext as BaseContext } from "../features/tooling/server/types";
 import type { WorkspaceServices } from "./services";
-type ToolContext=BaseContext<WorkspaceServices>;
+type ToolContext = BaseContext<WorkspaceServices>;
 export const resourceKinds = [
   "workspaces",
   "collections",
@@ -259,7 +261,7 @@ export async function inspectResource(uri: string, context: ToolContext) {
       uri,
       kind: "component",
       component,
-      schema: (service.catalog() as any).components[component.component],
+      schema: catalogComponents()[component.component],
       relationships: { interface: `${base}/interface` },
       operations: ["apply_interface_messages", "inspect_component"],
     };

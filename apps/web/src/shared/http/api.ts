@@ -1,4 +1,4 @@
-export async function api<T = any>(
+export async function api<T = unknown>(
   path: string,
   method = "GET",
   body?: unknown,

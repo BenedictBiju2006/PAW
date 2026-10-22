@@ -1,6 +1,6 @@
-import "server-only";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import "server-only";
 
 // Resolve on the server at runtime, so deployment variables can change after a build.
 const readEnv = (name: string) => process.env[name];

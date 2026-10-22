@@ -1,9 +1,10 @@
+import "server-only";
 import { z } from "zod";
 import { ServiceError } from "../../../shared/db/result";
-import { openaiProvider } from "./adapters/openai";
+import { providerError } from "../model/provider";
 import { googleProvider } from "./adapters/google";
 import { groqProvider } from "./adapters/groq";
-import { providerError } from "../model/provider";
+import { openaiProvider } from "./adapters/openai";
 export const providerId = z.enum(["openai", "google", "groq"]);
 export type ProviderId = z.infer<typeof providerId>;
 const definitions = {

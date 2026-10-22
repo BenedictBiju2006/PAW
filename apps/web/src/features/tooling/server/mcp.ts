@@ -1,17 +1,25 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import {
   CallToolRequestSchema,
-  ListToolsRequestSchema,
   ListResourcesRequestSchema,
-  ReadResourceRequestSchema,
   ListResourceTemplatesRequestSchema,
+  ListToolsRequestSchema,
+  ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
+import "server-only";
 import { z } from "zod";
 import { ToolExecutor } from "./executor";
 import { ToolRegistry } from "./registry";
 import type { ToolContext } from "./types";
 /** One instance per authenticated host session. No public transport or credentials. */
-export function createMcpAdapter<Services>(registry: ToolRegistry<Services>, context: ToolContext<Services>, resources: {defaultKind: string; templates: {uriTemplate:string;name:string;mimeType:string}[]}) {
+export function createMcpAdapter<Services>(
+  registry: ToolRegistry<Services>,
+  context: ToolContext<Services>,
+  resources: {
+    defaultKind: string;
+    templates: { uriTemplate: string; name: string; mimeType: string }[];
+  },
+) {
   const executor = new ToolExecutor(registry, context);
   const server = new Server(
     { name: "paw", version: "2.0.0" },
@@ -56,7 +64,15 @@ export function createMcpAdapter<Services>(registry: ToolRegistry<Services>, con
       limit: 25,
     });
     if (!result.ok) throw new Error(result.error.message);
-    const data = result.data as { items: {uri:string;name:string;mimeType:string;description?:string}[]; nextOffset: number | null };
+    const data = result.data as {
+      items: {
+        uri: string;
+        name: string;
+        mimeType: string;
+        description?: string;
+      }[];
+      nextOffset: number | null;
+    };
     return {
       resources: data.items,
       nextCursor:

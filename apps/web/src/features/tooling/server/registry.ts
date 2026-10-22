@@ -1,16 +1,35 @@
+import "server-only";
 import { z } from "zod";
-import type { ToolDefinition, ToolMetadata, ToolContext } from "./types";
+import type {
+  ToolContext,
+  ToolDefinition,
+  ToolMetadata,
+  ToolResult,
+} from "./types";
 export class ToolRegistry<Services = unknown> {
-constructor(readonly authorize?: (args:Record<string,unknown>, id:string, context:ToolContext<Services>)=>Promise<void>) {}
+  constructor(
+    readonly authorize?: (
+      args: Record<string, unknown>,
+      id: string,
+      context: ToolContext<Services>,
+    ) => Promise<Extract<ToolResult, { ok: false }> | void>,
+  ) {}
   private tools = new Map<string, ToolDefinition<Services>>();
   register<S extends z.ZodObject>(
     metadata: ToolMetadata,
     inputSchema: S,
-    handler: (args: z.infer<S>, context: ToolContext<Services>) => Promise<unknown>,
+    handler: (
+      args: z.infer<S>,
+      context: ToolContext<Services>,
+    ) => Promise<unknown>,
   ) {
     if (this.tools.has(metadata.id))
       throw new Error(`Duplicate tool: ${metadata.id}`);
-    this.tools.set(metadata.id, { ...metadata, inputSchema, handler: (args, context) => handler(inputSchema.parse(args), context) });
+    this.tools.set(metadata.id, {
+      ...metadata,
+      inputSchema,
+      handler: (args, context) => handler(inputSchema.parse(args), context),
+    });
     return this;
   }
   resolve(id: string) {

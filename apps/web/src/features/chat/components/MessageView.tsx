@@ -1,9 +1,9 @@
 "use client";
 import type { UIMessage } from "ai";
-import ReactMarkdown from "react-markdown";
 import { useState } from "react";
+import ReactMarkdown from "react-markdown";
+import type { Activity } from "../../agent/public";
 import type { Message } from "../model/schema";
-import type { Activity } from "../../agent/server/events";
 export type ChatMessage = UIMessage<
   unknown,
   {
