@@ -2,8 +2,14 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
-import { emptyInterface, inspectInterface } from "../apps/web/src/features/interfaces/protocol/document";
-import { CATALOG_ID, PROTOCOL } from "../apps/web/src/features/interfaces/protocol/catalog";
+import {
+  emptyInterface,
+  inspectInterface,
+} from "../apps/web/src/features/interfaces/protocol/document";
+import {
+  CATALOG_ID,
+  PROTOCOL,
+} from "../apps/web/src/features/interfaces/protocol/catalog";
 import { createWorkspaceServices } from "../apps/web/src/composition/services";
 const enabled = Boolean(process.env.PAW_TEST_REST_URL);
 const a = "11111111-1111-4111-8111-111111111111";
@@ -66,6 +72,20 @@ test(
       "forward migration preserves legacy interfaces, records, revisions, and supports conversion/restore",
       async () => {
         const legacyId = "33333333-3333-4333-8333-333333333333";
+        const legacyTitle = (
+          await dbA
+            .from("conversations")
+            .select("*")
+            .eq("id", "99999999-9999-4999-8999-999999999999")
+            .single()
+        ).data;
+        assert.equal(legacyTitle.title, "New conversation");
+        assert.equal(legacyTitle.title_origin, "manual");
+        assert.equal(legacyTitle.title_attempted, true);
+        assert.equal(
+          new Date(legacyTitle.updated_at).toISOString(),
+          "2026-01-02T00:00:00.000Z",
+        );
         const raw = (
           await dbA.from("workspaces").select("*").eq("id", legacyId).single()
         ).data;
@@ -513,10 +533,12 @@ test(
   async (t) => {
     const { createToolRegistry } =
       await import("../apps/web/src/composition/tools");
-    const { ToolExecutor } = await import("../apps/web/src/features/tooling/server/executor");
+    const { ToolExecutor } =
+      await import("../apps/web/src/features/tooling/server/executor");
     const { ConversationService } =
       await import("../apps/web/src/features/chat/server/services");
-    const { createMcpAdapter } = await import("../apps/web/src/composition/mcp");
+    const { createMcpAdapter } =
+      await import("../apps/web/src/composition/mcp");
     const { Client } =
       await import("@modelcontextprotocol/sdk/client/index.js");
     const { InMemoryTransport } =
@@ -975,18 +997,22 @@ test(
   "Milestone 3: trusted persistence, encrypted settings and scripted autonomous agent",
   { skip: !enabled },
   async (t) => {
-    const { AgentStore } = await import("../apps/web/src/features/agent/server/store");
+    const { AgentStore } =
+      await import("../apps/web/src/features/agent/server/store");
     const { AgentOrchestrator } =
       await import("../apps/web/src/features/agent/server/orchestrator");
     const { ProviderSettingsService } =
       await import("../apps/web/src/features/providers/server/settings");
-    const { modelHistory } = await import("../apps/web/src/features/agent/server/context");
+    const { modelHistory } =
+      await import("../apps/web/src/features/agent/server/context");
     const { createToolRegistry } =
       await import("../apps/web/src/composition/tools");
-    const { ToolExecutor } = await import("../apps/web/src/features/tooling/server/executor");
+    const { ToolExecutor } =
+      await import("../apps/web/src/features/tooling/server/executor");
     const { ConversationService } =
       await import("../apps/web/src/features/chat/server/services");
-    const { appendComponents } = await import("../apps/web/src/features/interfaces/protocol/document");
+    const { appendComponents } =
+      await import("../apps/web/src/features/interfaces/protocol/document");
     const { randomUUID, randomBytes } = await import("node:crypto");
     const db = client(a),
       admin = client(undefined, "service_role"),
@@ -1493,7 +1519,8 @@ test(
   async () => {
     const { ProviderSettingsService } =
       await import("../apps/web/src/features/providers/server/settings");
-    const { providerModels } = await import("../apps/web/src/features/providers/server/registry");
+    const { providerModels } =
+      await import("../apps/web/src/features/providers/server/registry");
     const admin = client(undefined, "service_role");
     const env = {
       PAW_CREDENTIAL_ENCRYPTION_KEY: Buffer.alloc(32, 9).toString("base64"),
@@ -1510,14 +1537,16 @@ test(
     const status = await settings.status();
     assert.equal(status.providers.filter((p) => p.configured).length, 3);
     assert.ok(!JSON.stringify(status).includes("secret"));
-    const { AgentStore } = await import("../apps/web/src/features/agent/server/store");
+    const { AgentStore } =
+      await import("../apps/web/src/features/agent/server/store");
     const { AgentOrchestrator } =
       await import("../apps/web/src/features/agent/server/orchestrator");
     const { ConversationService } =
       await import("../apps/web/src/features/chat/server/services");
     const { createToolRegistry } =
       await import("../apps/web/src/composition/tools");
-    const { ToolExecutor } = await import("../apps/web/src/features/tooling/server/executor");
+    const { ToolExecutor } =
+      await import("../apps/web/src/features/tooling/server/executor");
     const { randomUUID } = await import("node:crypto");
     const service = createWorkspaceServices(client(b), b);
     const workspace = await service.create("Switch providers");
@@ -1547,20 +1576,21 @@ test(
         text: `Hello ${provider}`,
         ...selected,
       });
-      const adapter: import("../apps/web/src/features/providers/model/provider").ModelProvider = {
-        id: provider,
-        capabilities: { streaming: true, tools: true, hostedMcp: false },
-        async *stream() {
-          yield { type: "text", text: `Reply from ${provider}` };
-          yield {
-            type: "usage",
-            input: 10,
-            output: 5,
-            cachedInput: 2,
-            reason: "stop",
-          };
-        },
-      };
+      const adapter: import("../apps/web/src/features/providers/model/provider").ModelProvider =
+        {
+          id: provider,
+          capabilities: { streaming: true, tools: true, hostedMcp: false },
+          async *stream() {
+            yield { type: "text", text: `Reply from ${provider}` };
+            yield {
+              type: "usage",
+              input: 10,
+              output: 5,
+              cachedInput: 2,
+              reason: "stop",
+            };
+          },
+        };
       await new AgentOrchestrator(adapter, executor, store).run(
         {
           turnId,
@@ -1619,7 +1649,8 @@ test(
   async () => {
     const { ProviderSettingsService } =
       await import("../apps/web/src/features/providers/server/settings");
-    const { encryptCredential } = await import("../apps/web/src/features/providers/server/credentials");
+    const { encryptCredential } =
+      await import("../apps/web/src/features/providers/server/credentials");
     const admin = client(undefined, "service_role");
     const env = {
       PAW_CREDENTIAL_ENCRYPTION_KEY: Buffer.alloc(32, 12).toString("base64"),
@@ -1632,18 +1663,16 @@ test(
     );
     assert.equal(
       (
-        await admin
-          .from("provider_settings")
-          .upsert(
-            {
-              user_id: b,
-              provider: "google",
-              model: "gemini-2.5-pro",
-              credential,
-              token_warning: 12345,
-            },
-            { onConflict: "user_id,provider" },
-          )
+        await admin.from("provider_settings").upsert(
+          {
+            user_id: b,
+            provider: "google",
+            model: "gemini-2.5-pro",
+            credential,
+            token_warning: 12345,
+          },
+          { onConflict: "user_id,provider" },
+        )
       ).error,
       null,
     );
@@ -1706,5 +1735,414 @@ test(
       true,
     );
     assert.ok(!JSON.stringify(saved).includes("saved-google-fixture-key"));
+  },
+);
+
+test(
+  "Milestone 3.2 titles: one claim, manual rename CAS, authorization and recent navigation",
+  { skip: !enabled },
+  async () => {
+    const { ConversationService } =
+      await import("../apps/web/src/features/chat/server/services");
+    const { generateConversationTitle } =
+      await import("../apps/web/src/features/chat/server/titles");
+    const admin = client(undefined, "service_role"),
+      db = client(a),
+      service = createWorkspaceServices(db, a);
+    const workspace = await service.create("Title integration");
+    const chats = new ConversationService(db, service);
+    const text = {
+      role: "user",
+      content: [{ type: "text", text: "Build an expense tracker with charts" }],
+    };
+    const base = { admin, actor: a, workspaceId: workspace.id };
+    try {
+      const first = await chats.create(workspace.id),
+        second = await chats.create(workspace.id, "Manual topic");
+      assert.equal(first.title_origin, "default");
+      assert.equal(second.title_origin, "manual");
+      await chats.append(workspace.id, first.id, text);
+      assert.equal(
+        (await chats.list(workspace.id)).conversations[0].id,
+        first.id,
+      );
+      let calls = 0;
+      const resolve = async () => ({
+        model: "mock",
+        apiKey: "mock",
+        provider: {
+          id: "mock",
+          capabilities: { streaming: true, tools: true, hostedMcp: false },
+          async *stream(input: any) {
+            calls++;
+            assert.deepEqual(input.tools, {});
+            assert.equal(input.messages.length, 1);
+            yield { type: "text" as const, text: "Expense Tracker Charts" };
+          },
+        },
+      });
+      const results = await Promise.all([
+        generateConversationTitle({
+          ...base,
+          conversationId: first.id,
+          resolve,
+        }),
+        generateConversationTitle({
+          ...base,
+          conversationId: first.id,
+          resolve,
+        }),
+      ]);
+      assert.equal(calls, 1);
+      assert.equal(results.filter(Boolean).length, 1);
+      assert.equal(
+        (await chats.conversation(workspace.id, first.id)).title,
+        "Expense Tracker Charts",
+      );
+      assert.equal(
+        await generateConversationTitle({
+          ...base,
+          conversationId: first.id,
+          resolve,
+        }),
+        null,
+      );
+      assert.equal(calls, 1);
+      const racing = await chats.create(workspace.id);
+      await chats.append(workspace.id, racing.id, text);
+      let release!: () => void, entered!: () => void;
+      const gate = new Promise<void>((r) => (release = r)),
+        ready = new Promise<void>((r) => (entered = r));
+      const delayed = generateConversationTitle({
+        ...base,
+        conversationId: racing.id,
+        resolve: async () => ({
+          model: "mock",
+          apiKey: "mock",
+          provider: {
+            id: "mock",
+            capabilities: { streaming: true, tools: true, hostedMcp: false },
+            async *stream() {
+              entered();
+              await gate;
+              yield { type: "text" as const, text: "Delayed Generated Title" };
+            },
+          },
+        }),
+      });
+      await ready;
+      await chats.rename(workspace.id, racing.id, "My manual title");
+      release();
+      assert.equal(await delayed, null);
+      const renamed = await chats.conversation(workspace.id, racing.id);
+      assert.equal(renamed.title, "My manual title");
+      assert.equal(renamed.title_origin, "manual");
+      const same = await chats.create(workspace.id);
+      await chats.rename(workspace.id, same.id, "New conversation");
+      await chats.append(workspace.id, same.id, text);
+      assert.equal(
+        await generateConversationTitle({
+          ...base,
+          conversationId: same.id,
+          resolve,
+        }),
+        null,
+      );
+      assert.ok(
+        (
+          await db.rpc("claim_conversation_title", {
+            actor: a,
+            workspace: workspace.id,
+            conversation: same.id,
+          })
+        ).error,
+      );
+      assert.ok(
+        (
+          await admin.rpc("claim_conversation_title", {
+            actor: b,
+            workspace: workspace.id,
+            conversation: same.id,
+          })
+        ).error,
+      );
+      await db
+        .from("conversations")
+        .update({
+          title_origin: "default",
+          title_attempted: false,
+          title_revision: 0,
+        })
+        .eq("id", racing.id);
+      assert.equal(
+        (await chats.conversation(workspace.id, racing.id)).title_origin,
+        "manual",
+      );
+      const fallback = await chats.create(workspace.id);
+      await chats.append(workspace.id, fallback.id, text);
+      await generateConversationTitle({
+        ...base,
+        conversationId: fallback.id,
+        resolve: async () => {
+          throw Error("quota unavailable");
+        },
+      });
+      assert.equal(
+        (await chats.conversation(workspace.id, fallback.id)).title_origin,
+        "fallback",
+      );
+      assert.equal(
+        (
+          await new ConversationService(db, service).conversation(
+            workspace.id,
+            fallback.id,
+          )
+        ).title,
+        "Build an expense tracker with charts",
+      );
+    } finally {
+      await service.remove(workspace.id, true);
+    }
+  },
+);
+
+test(
+  "Milestone 3.2 streaming host: nonblocking titles, targeted Stop, tools, and request disconnect",
+  { skip: !enabled },
+  async () => {
+    const { ConversationService, generateConversationTitle } =
+      await import("../apps/web/src/features/chat/server/public");
+    const { agentResponse, cancelAgent } =
+      await import("../apps/web/src/features/agent/server/stream");
+    const { ToolExecutor } =
+      await import("../apps/web/src/features/tooling/server/public");
+    const { createToolRegistry } =
+      await import("../apps/web/src/composition/tools");
+    const { randomUUID } = await import("node:crypto");
+    const admin = client(undefined, "service_role"),
+      db = client(a),
+      service = createWorkspaceServices(db, a);
+    const workspace = await service.create("Stream lifecycle");
+    const conversations = new ConversationService(db, service);
+    const first = await conversations.create(workspace.id),
+      second = await conversations.create(workspace.id),
+      third = await conversations.create(workspace.id);
+    let releaseWork!: () => void, releaseTitle!: () => void;
+    const work = new Promise<void>((r) => (releaseWork = r)),
+      titleGate = new Promise<void>((r) => (releaseTitle = r));
+    let step = 0,
+      titleCalls = 0;
+    const provider = {
+      id: "fixture",
+      capabilities: { streaming: true, tools: true, hostedMcp: false },
+      async *stream(input: any) {
+        if (
+          input.system.includes(second.id) ||
+          input.system.includes(third.id)
+        ) {
+          yield { type: "text" as const, text: "Waiting response" };
+          await new Promise<void>((_, reject) => {
+            if (input.signal.aborted) reject(input.signal.reason);
+            else
+              input.signal.addEventListener(
+                "abort",
+                () => reject(input.signal.reason),
+                { once: true },
+              );
+          });
+          return;
+        }
+        if (step++ === 0) {
+          yield { type: "text" as const, text: "Planning response" };
+          yield {
+            type: "call" as const,
+            id: "describe",
+            name: "describe_tool",
+            args: { toolId: "create_collection" },
+          };
+        } else if (step === 2) {
+          await work;
+          yield {
+            type: "call" as const,
+            id: "write",
+            name: "invoke_tool",
+            args: {
+              toolId: "create_collection",
+              arguments: {
+                workspaceId: workspace.id,
+                name: "Lifecycle notes",
+                fields: [
+                  {
+                    key: "title",
+                    label: "Title",
+                    type: "string",
+                    required: true,
+                  },
+                ],
+              },
+            },
+          };
+        } else yield { type: "text" as const, text: "Completed response" };
+      },
+    };
+    const host = {
+      admin: () => admin,
+      conversations,
+      settings: async () => ({
+        provider: "fixture",
+        model: "mock",
+        apiKey: "mock",
+      }),
+      provider: () => provider,
+      executor: (workspaceId: string) =>
+        new ToolExecutor(createToolRegistry(), {
+          service,
+          workspaceId,
+          permissions: new Set(["read", "write", "delete"] as const),
+        }),
+      title: async (workspaceId: string, conversationId: string) => {
+        if (conversationId !== first.id) return null;
+        return generateConversationTitle({
+          admin,
+          actor: a,
+          workspaceId,
+          conversationId,
+          resolve: async () => ({
+            model: "mock",
+            apiKey: "mock",
+            provider: {
+              id: "title-fixture",
+              capabilities: provider.capabilities,
+              async *stream() {
+                titleCalls++;
+                await titleGate;
+                yield { type: "text" as const, text: "Lifecycle Notes" };
+              },
+            },
+          }),
+        });
+      },
+    };
+    const request = (
+      conversationId: string,
+      turnId: string,
+      signal: AbortSignal,
+    ) =>
+      agentResponse(
+        a,
+        {
+          workspaceId: workspace.id,
+          conversationId,
+          turnId,
+          text: "Build notes",
+        },
+        signal,
+        host,
+      );
+    async function until(predicate: () => boolean | Promise<boolean>) {
+      for (let i = 0; i < 150; i++) {
+        if (await predicate()) return;
+        await new Promise((r) => setTimeout(r, 10));
+      }
+      assert.fail("Timed out waiting for stream fixture");
+    }
+    const firstTurn = randomUUID(),
+      secondTurn = randomUUID(),
+      thirdTurn = randomUUID();
+    try {
+      let firstText = "",
+        secondText = "";
+      const firstResponse = await request(
+        first.id,
+        firstTurn,
+        new AbortController().signal,
+      );
+      const consumeFirst = (async () => {
+        for await (const chunk of firstResponse.body! as any)
+          firstText += new TextDecoder().decode(chunk);
+      })();
+      await until(() => firstText.includes("Planning response"));
+      await until(() => titleCalls === 1);
+      assert.equal(titleCalls, 1);
+      const secondResponse = await request(
+        second.id,
+        secondTurn,
+        new AbortController().signal,
+      );
+      const consumeSecond = (async () => {
+        for await (const chunk of secondResponse.body! as any)
+          secondText += new TextDecoder().decode(chunk);
+      })();
+      await until(() => secondText.includes("Waiting response"));
+      await cancelAgent(
+        a,
+        {
+          workspaceId: workspace.id,
+          conversationId: second.id,
+          turnId: secondTurn,
+        },
+        host,
+      );
+      await consumeSecond;
+      assert.equal(
+        (
+          await admin
+            .from("agent_turns")
+            .select("status")
+            .eq("id", secondTurn)
+            .single()
+        ).data.status,
+        "cancelled",
+      );
+      assert.equal(
+        (
+          await admin
+            .from("agent_turns")
+            .select("status")
+            .eq("id", firstTurn)
+            .single()
+        ).data.status,
+        "running",
+      );
+      releaseWork();
+      await until(() => firstText.includes("Completed response"));
+      assert.equal((await service.collections(workspace.id)).length, 1);
+      // Primary text and persisted tool mutations finished while title inference waits.
+      assert.equal(
+        (await conversations.conversation(workspace.id, first.id)).title,
+        "New conversation",
+      );
+      releaseTitle();
+      await consumeFirst;
+      assert.ok(firstText.includes("Lifecycle Notes"));
+      assert.equal(
+        (await conversations.conversation(workspace.id, first.id)).title_origin,
+        "generated",
+      );
+      const disconnected = new AbortController();
+      const response = await request(third.id, thirdTurn, disconnected.signal);
+      let thirdText = "";
+      const consumeThird = (async () => {
+        for await (const chunk of response.body! as any)
+          thirdText += new TextDecoder().decode(chunk);
+      })();
+      await until(() => thirdText.includes("Waiting response"));
+      disconnected.abort();
+      await consumeThird;
+      assert.equal(
+        (
+          await admin
+            .from("agent_turns")
+            .select("status")
+            .eq("id", thirdTurn)
+            .single()
+        ).data.status,
+        "cancelled",
+      );
+    } finally {
+      releaseWork();
+      releaseTitle();
+      await service.remove(workspace.id, true);
+    }
   },
 );

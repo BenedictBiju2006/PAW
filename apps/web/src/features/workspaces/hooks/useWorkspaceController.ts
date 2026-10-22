@@ -1,7 +1,14 @@
 "use client";
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../../../shared/http/api";
 import { authenticate, getSession, signOut } from "../../auth/client";
+import { useChatSessions, useConversationNavigation } from "../../chat/client";
+import {
+  defaultDestination,
+  destinationFromUrl,
+  workspaceUrl,
+  type WorkspaceDestination,
+} from "../model/navigation";
 import type { Collection } from "../../collections/public";
 import type { Workspace } from "../model/types";
 import { useWorkspaceViewport } from "./useWorkspaceViewport";
@@ -19,13 +26,15 @@ export function useWorkspaceController(configured: boolean) {
     "workspace",
   );
   const [developer, setDeveloper] = useState(false);
-  const [interfaceExpanded, setInterfaceExpanded] = useState(false);
-  const [primaryView, setPrimaryView] = useState<"chat" | "interface">("chat");
-  useEffect(() => {
-    try {
-      setDeveloper(localStorage.getItem("paw.developerTools") === "true");
-    } catch {}
-  }, []);
+  const [destination, setDestination] = useState<WorkspaceDestination>({
+    kind: "new-chat",
+  });
+  const [newChatVersion, setNewChatVersion] = useState(0);
+  const sessions = useChatSessions();
+  const conversations = useConversationNavigation(active?.id ?? null);
+  const loadSequence = useRef(0);
+  const activeId = useRef(active?.id);
+  activeId.current = active?.id;
   useWorkspaceViewport();
   const [epoch, setEpoch] = useState(0);
   const [selectedCollection, setSelectedCollection] = useState("");
@@ -64,7 +73,11 @@ export function useWorkspaceController(configured: boolean) {
             const requested = new URLSearchParams(window.location.search).get(
               "workspace",
             );
-            if (requested) await loadWorkspace(requested);
+            if (requested)
+              await loadWorkspace(
+                requested,
+                destinationFromUrl(new URLSearchParams(window.location.search)),
+              );
           }
         }
       })
@@ -74,24 +87,41 @@ export function useWorkspaceController(configured: boolean) {
       current = false;
     };
   }, [configured]);
-  async function loadWorkspace(id: string) {
+  async function loadWorkspace(id: string, requested?: WorkspaceDestination) {
+    const sequence = ++loadSequence.current;
     const [workspace, items] = await Promise.all([
       api<Workspace>(`workspaces/${id}`),
       api<Collection[]>(`workspaces/${id}/collections`),
     ]);
+    if (sequence !== loadSequence.current) return;
+    let target = requested ?? defaultDestination(workspace);
+    if (target.kind === "conversation") {
+      try {
+        await api(`workspaces/${id}/conversations/${target.conversationId}`);
+      } catch (e) {
+        target = { kind: "new-chat" };
+        setError((e as Error).message);
+      }
+    }
+    if (sequence !== loadSequence.current) return;
     setActive(workspace);
+    setDestination(target);
+    setDeveloper(false);
     setCollections(items);
     setSelectedCollection(items[0]?.id ?? "");
     setTab("workspace");
     setEpoch((e) => e + 1);
-    window.history.replaceState(null, "", `?workspace=${id}`);
   }
   async function open(id: string) {
-    await run(() => loadWorkspace(id));
+    await run(async () => {
+      await loadWorkspace(id);
+      window.history.pushState(null, "", `/?workspace=${id}`);
+    });
   }
   async function signout() {
     await run(async () => {
       await signOut();
+      sessions.reset();
       setUser(null);
       setActive(null);
       setWorkspaces([]);
@@ -111,6 +141,71 @@ export function useWorkspaceController(configured: boolean) {
       } else setNotice(result.message);
     });
   }
+  function navigate(target: WorkspaceDestination) {
+    if (!active) return;
+    const id = active.id;
+    void run(async () => {
+      if (
+        target.kind === "conversation" &&
+        !conversations.conversations.some((c) => c.id === target.conversationId)
+      )
+        await api(`workspaces/${id}/conversations/${target.conversationId}`);
+      if (target.kind === "interface") await refreshWorkspace(id);
+      if (activeId.current !== id) return;
+      setDestination(target);
+      setDeveloper(false);
+      window.history.pushState(null, "", workspaceUrl(id, target));
+    });
+  }
+  function newChat() {
+    if (active) sessions.drafts.delete(`${active.id}:new`);
+    setNewChatVersion((v) => v + 1);
+    navigate({ kind: "new-chat" });
+  }
+  function overview() {
+    ++loadSequence.current;
+    setActive(null);
+    setDeveloper(false);
+    window.history.pushState(null, "", "/");
+  }
+  const refreshWorkspace = useCallback(async (id: string) => {
+    const [workspace, items] = await Promise.all([
+      api<Workspace>(`workspaces/${id}`),
+      api<Collection[]>(`workspaces/${id}/collections`),
+    ]);
+    if (activeId.current !== id) return;
+    setActive(workspace);
+    setCollections(items);
+    setSelectedCollection((current) =>
+      items.some((c) => c.id === current) ? current : (items[0]?.id ?? ""),
+    );
+    setEpoch((e) => e + 1);
+  }, []);
+  useEffect(
+    () =>
+      sessions.subscribe((event) => {
+        if (event.kind === "mutation" && event.workspaceId === activeId.current)
+          void refreshWorkspace(event.workspaceId).catch((e) =>
+            setError(e.message),
+          );
+      }),
+    [sessions, refreshWorkspace],
+  );
+  useEffect(() => {
+    if (!user) return;
+    const pop = () => {
+      const params = new URLSearchParams(location.search);
+      const id = params.get("workspace");
+      if (id) void run(() => loadWorkspace(id, destinationFromUrl(params)));
+      else {
+        ++loadSequence.current;
+        setActive(null);
+        setDeveloper(false);
+      }
+    };
+    window.addEventListener("popstate", pop);
+    return () => window.removeEventListener("popstate", pop);
+  }, [!!user]);
   async function save(definition: unknown) {
     if (!active) return;
     const workspace = await api<Workspace>(
@@ -148,10 +243,13 @@ export function useWorkspaceController(configured: boolean) {
     setTab,
     developer,
     setDeveloper,
-    interfaceExpanded,
-    setInterfaceExpanded,
-    primaryView,
-    setPrimaryView,
+    destination,
+    navigate,
+    newChat,
+    newChatVersion,
+    overview,
+    conversations,
+    refreshWorkspace,
     epoch,
     setEpoch,
     selectedCollection,

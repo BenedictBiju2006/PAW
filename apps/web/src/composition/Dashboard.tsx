@@ -1,4 +1,5 @@
 "use client";
+import { ChatSessionProvider } from "../features/chat/client";
 import { AccountDialog, AuthScreen } from "../features/auth/client";
 import {
   DeveloperTools,
@@ -10,7 +11,7 @@ import {
   WorkspaceShell,
 } from "../features/workspaces/client";
 import { Brand } from "../shared/ui/Brand";
-export default function Dashboard({ configured }: { configured: boolean }) {
+function DashboardContent({ configured }: { configured: boolean }) {
   const model = useWorkspaceController(configured);
   const {
     user,
@@ -89,33 +90,19 @@ export default function Dashboard({ configured }: { configured: boolean }) {
           <WorkspaceOverview model={model} />
         ) : (
           <>
-            <div className="page-heading">
-              <div>
-                <h1>{active.name}</h1>
-              </div>
-              <div className="row">
-                <WorkspaceSettings model={model} />
-              </div>
-            </div>
             <WorkspacePanes model={model} />
-            <button
-              className="developer-toggle"
-              aria-controls="developer-panel"
-              aria-expanded={developer}
-              onClick={() => {
-                const value = !developer;
-                setDeveloper(value);
-                try {
-                  localStorage.setItem("paw.developerTools", String(value));
-                } catch {}
-              }}
-            >
-              Developer Tools {developer ? "▴" : "▾"}
-            </button>
             <DeveloperTools model={model} />
           </>
         )}
       </main>
     </WorkspaceShell>
+  );
+}
+
+export default function Dashboard(props: { configured: boolean }) {
+  return (
+    <ChatSessionProvider>
+      <DashboardContent {...props} />
+    </ChatSessionProvider>
   );
 }

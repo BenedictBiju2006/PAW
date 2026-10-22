@@ -15,6 +15,7 @@ export type ChatMessage = UIMessage<
       usage?: { input: number; output: number };
     };
     mutation: { workspaceId: string };
+    conversation: { id: string; title: string };
   }
 >;
 export function persistedMessages(
@@ -177,6 +178,23 @@ export function MessageView({ message }: { message: ChatMessage }) {
         message.role === "user" ? "Your message" : "Assistant message"
       }
     >
+      {message.parts.filter((part) => part.type === "data-activity").length >
+        0 && (
+        <details className="activity-group">
+          <summary>
+            {
+              message.parts.filter((part) => part.type === "data-activity")
+                .length
+            }{" "}
+            operations
+          </summary>
+          {message.parts.map((part, index) =>
+            part.type === "data-activity" ? (
+              <ActivityRow key={index} activity={part.data} />
+            ) : null,
+          )}
+        </details>
+      )}
       {message.parts.map((part, index) => {
         if (part.type === "text")
           return (
@@ -200,8 +218,7 @@ export function MessageView({ message }: { message: ChatMessage }) {
               )}
             </div>
           );
-        if (part.type === "data-activity")
-          return <ActivityRow key={index} activity={part.data} />;
+        if (part.type === "data-activity") return null;
         if (part.type === "data-turn")
           return (
             <p className="turn-status muted" key={index}>

@@ -23,6 +23,9 @@ for migration in supabase/migrations/*.sql; do
   if [[ "$migration" == *202610200004_agent.sql && ! -f supabase/migrations/202610200003_conversations.sql ]]; then
     docker exec -i "$database" psql -U postgres -v ON_ERROR_STOP=1 < tests/historical-conversations.sql
   fi
+  if [[ "$migration" == *202610220002_workspace_navigation_titles.sql ]]; then
+    docker exec -i "$database" psql -U postgres -v ON_ERROR_STOP=1 < tests/title-legacy.sql
+  fi
   docker exec -i "$database" psql -U postgres -v ON_ERROR_STOP=1 < "$migration"
   if [[ "$migration" == *202610200004_agent.sql ]]; then
     docker exec -i "$database" psql -U postgres -v ON_ERROR_STOP=1 < tests/provider-legacy.sql

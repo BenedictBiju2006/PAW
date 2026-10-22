@@ -25,6 +25,8 @@ export async function handleChat(
     data = await conversations.list(workspaceId, paging);
   else if (!childId && !recordId && method === "POST")
     data = await conversations.create(workspaceId, body.title);
+  else if (childId && !recordId && method === "GET")
+    data = await conversations.conversation(workspaceId, childId);
   else if (childId && !recordId && method === "PATCH")
     data = await conversations.rename(workspaceId, childId, body.title);
   else if (childId && !recordId && method === "DELETE") {

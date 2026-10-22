@@ -2,7 +2,7 @@
 import { useChat } from "@ai-sdk/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../../../shared/http/api";
-import { transport } from "../client/transport";
+import { useChatSessions } from "../components/ChatSessionProvider";
 import { persistedMessages, type ChatMessage } from "../components/MessageView";
 import type { Message } from "../model/schema";
 import { useConversationDraft } from "./useConversationDraft";
@@ -19,39 +19,37 @@ export function useChatThread({
   configured: boolean;
   refresh: () => void;
 }) {
+  const sessions = useChatSessions();
+  const session = sessions.get(workspaceId, conversationId);
   const base = `workspaces/${workspaceId}/conversations/${conversationId}`;
   const [draft, setDraft] = useConversationDraft(conversationId, drafts);
   const [loading, setLoading] = useState(true),
     [error, setError] = useState(""),
-    [history, setHistory] = useState<Message[]>([]),
-    [before, setBefore] = useState<number | null>(null),
-    [turns, setTurns] = useState<
-      {
-        id: string;
-        status: string;
-        notice: string;
-        input_tokens: number;
-        output_tokens: number;
-        provider: string;
-        model: string;
-        model_requests: number;
-        tool_calls: number;
-        cached_input_tokens: number | null;
-      }[]
-    >([]);
-  const historyRef = useRef<Message[]>([]);
+    [history, setHistory] = useState<Message[]>(session.history),
+    [before, setBefore] = useState<number | null>(session.before),
+    [turns, setTurns] = useState(session.turns);
+  const historyRef = useRef<Message[]>(session.history);
   const submitting = useRef(false);
   const scroll = useRef<HTMLDivElement>(null),
-    nearBottom = useRef(true),
+    nearBottom = useRef(session.nearBottom),
     composer = useRef<HTMLTextAreaElement>(null),
     mounted = useRef(true),
-    currentTurn = useRef<string | null>(null),
-    lastRequest = useRef<{
-      turnId: string;
-      workspaceId: string;
-      conversationId: string;
-      text: string;
-    } | null>(null);
+    currentTurn = {
+      get current() {
+        return session.currentTurn;
+      },
+      set current(value: string | null) {
+        session.currentTurn = value;
+      },
+    },
+    lastRequest = {
+      get current() {
+        return session.lastRequest;
+      },
+      set current(value: import("../client/sessions").TurnRequest | null) {
+        session.lastRequest = value;
+      },
+    };
   const load = useCallback(async () => {
     const r = await api<{ messages: Message[]; before: number | null }>(
       `${base}/messages?recent=true`,
@@ -70,43 +68,38 @@ export function useChatThread({
     ).sort((a, b) => a.sequence - b.sequence);
     historyRef.current = combined;
     setHistory(combined);
+    session.history = combined;
     setBefore((previous) => (preserveOlder ? previous : r.before));
-    setMessages(persistedMessages(combined));
+    if (!preserveOlder) session.before = r.before;
+    if (!["submitted", "streaming"].includes(session.chat.status))
+      setMessages(persistedMessages(combined));
     try {
       const t = await api<typeof turns>(`${base}/turns`);
       if (mounted.current) {
         setTurns(t);
-        setMessages(
-          persistedMessages(
-            combined,
-            Object.fromEntries(t.map((turn) => [turn.id, turn.status])),
-          ),
-        );
+        session.turns = t;
+        if (!["submitted", "streaming"].includes(session.chat.status))
+          setMessages(
+            persistedMessages(
+              combined,
+              Object.fromEntries(t.map((turn) => [turn.id, turn.status])),
+            ),
+          );
       }
     } catch {}
   }, [base]);
-  const { messages, setMessages, sendMessage, status, stop } =
-    useChat<ChatMessage>({
-      id: conversationId,
-      transport,
-      onData: (part) => {
-        if (mounted.current && part.type === "data-mutation") refresh();
-      },
-      onFinish: () => {
-        if (!mounted.current) return;
-        currentTurn.current = null;
-        void load().catch((e) => mounted.current && setError(e.message));
-        refresh();
-      },
-      onError: (e) => {
-        if (!mounted.current) return;
-        setError(
-          e.message ||
-            "Response interrupted. Reload saved messages before retrying.",
-        );
-      },
-    });
-  const running = status === "submitted" || status === "streaming";
+  const {
+    messages,
+    setMessages,
+    sendMessage,
+    status,
+    stop,
+    error: transportError,
+  } = useChat<ChatMessage>({ chat: session.chat });
+  const running =
+    status === "submitted" ||
+    status === "streaming" ||
+    turns.some((t) => t.status === "running");
   useEffect(() => {
     mounted.current = true;
     load()
@@ -117,30 +110,48 @@ export function useChatThread({
           setTimeout(() => composer.current?.focus(), 0);
         }
       });
+    const unsubscribe = sessions.subscribe((event) => {
+      if (event.workspaceId === workspaceId && event.kind === "conversation")
+        setTimeout(() => {
+          if (mounted.current) void load().catch((e) => setError(e.message));
+        }, 0);
+    });
+    const poll = setInterval(() => {
+      if (
+        mounted.current &&
+        !["submitted", "streaming"].includes(session.chat.status)
+      )
+        void load().catch(() => {});
+    }, 2500);
     return () => {
       mounted.current = false;
-      void stop();
-      if (currentTurn.current)
-        void api("agent/cancel", "POST", {
-          turnId: currentTurn.current,
-          workspaceId,
-          conversationId,
-        }).catch(() => {});
+      session.scrollTop = scroll.current?.scrollTop ?? session.scrollTop;
+      session.nearBottom = nearBottom.current;
+      unsubscribe();
+      clearInterval(poll);
+      // Navigation unsubscribes the view. Only Stop or page/session disposal
+      // stops the externally managed AI SDK transport.
     };
   }, [load]);
   useEffect(() => {
     if (nearBottom.current && scroll.current)
       scroll.current.scrollTop = scroll.current.scrollHeight;
   }, [messages]);
-  async function submit() {
-    if (!draft.trim() || running || loading || submitting.current) return;
+  useEffect(() => {
+    if (!loading && scroll.current && !session.nearBottom)
+      scroll.current.scrollTop = session.scrollTop;
+  }, [loading]);
+  async function submit(initialText?: string) {
+    const messageText = initialText ?? draft;
+    if (!messageText.trim() || running || loading || submitting.current) return;
     submitting.current = true;
-    const text = draft.trim();
+    const text = messageText.trim();
     setError("");
     if (!configured) {
       try {
         await api(`${base}/messages`, "POST", { text });
         setDraft("");
+        sessions.notify({ workspaceId, kind: "conversation" });
         await load();
       } catch (e) {
         setError((e as Error).message);
@@ -165,7 +176,8 @@ export function useChatThread({
     }
   }
   async function cancel() {
-    const turnId = currentTurn.current;
+    const turnId =
+      currentTurn.current ?? turns.find((t) => t.status === "running")?.id;
     if (turnId)
       await api("agent/cancel", "POST", {
         turnId,
@@ -190,6 +202,8 @@ export function useChatThread({
       historyRef.current = combined;
       nearBottom.current = false;
       setHistory(combined);
+      session.history = combined;
+      session.before = r.before;
       setBefore(r.before);
       setMessages(persistedMessages(combined));
       requestAnimationFrame(() => {
@@ -206,7 +220,7 @@ export function useChatThread({
     setDraft,
     loading,
     setLoading,
-    error,
+    error: error || transportError?.message || "",
     setError,
     history,
     setHistory,
@@ -217,6 +231,7 @@ export function useChatThread({
     historyRef,
     submitting,
     scroll,
+    session,
     nearBottom,
     composer,
     mounted,

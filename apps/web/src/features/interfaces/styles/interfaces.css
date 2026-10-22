@@ -125,22 +125,6 @@ button .a2ui-text {
     padding: 12px;
   }
 }
-.interface-heading {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--border);
-  flex: none;
-}
-.interface-heading h2 {
-  font-size: 16px;
-  margin: 0;
-}
-.interface-heading button {
-  font-size: 12px;
-}
 .interface-content {
   flex: 1;
   min-height: 0;

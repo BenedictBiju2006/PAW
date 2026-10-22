@@ -88,6 +88,11 @@ test("native streaming transcript, tools, mutation refresh, safe Markdown and co
   const responseGate = new Promise<void>((resolve) => {
     releaseResponse = resolve;
   });
+  let cancellations = 0;
+  await page.route("**/api/agent/cancel", async (route) => {
+    cancellations++;
+    await route.fulfill({ json: { ok: true } });
+  });
   let count = 0;
   await page.route("**/api/agent", async (route) => {
     count++;
@@ -281,17 +286,17 @@ test("native streaming transcript, tools, mutation refresh, safe Markdown and co
     page.getByRole("heading", { name: "Workspace updated", exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByRole("region", { name: "Live interface", exact: true }),
-  ).toBeVisible();
+    page.getByRole("region", {
+      name: "Live interface",
+      exact: true,
+      includeHidden: true,
+    }),
+  ).toBeHidden();
   await expect(
     page.getByText("1 collection · Interface revision 1"),
   ).toHaveCount(0);
   expect(count).toBe(1);
-  await expect(
-    page
-      .locator(".primary-interface")
-      .getByRole("heading", { name: "Agent interface", exact: true }),
-  ).toBeVisible();
+  expect(cancellations).toBe(0);
   await expect(page.getByRole("log")).toContainText("Create notes");
   const savedTurns = await (
     await page.request.get(
@@ -399,7 +404,7 @@ test("native streaming transcript, tools, mutation refresh, safe Markdown and co
     page.getByRole("navigation", { name: "Conversations", exact: true }),
   ).toBeVisible();
   await page
-    .getByRole("button", { name: "Close conversations", exact: true })
+    .getByRole("button", { name: "Close navigation", exact: true })
     .click();
   await expect(page.getByLabel("Message", { exact: true })).toBeVisible();
   expect(
@@ -407,5 +412,4 @@ test("native streaming transcript, tools, mutation refresh, safe Markdown and co
       () => document.documentElement.scrollWidth <= window.innerWidth,
     ),
   ).toBe(true);
-  await page.screenshot({ path: "/tmp/paw-agent-mobile.png", fullPage: true });
 });

@@ -11,7 +11,7 @@
     "build": "npm run build --workspace apps/web",
     "start": "npm run start --workspace apps/web",
     "typecheck": "tsc --noEmit -p apps/web/tsconfig.json",
-    "test": "node --conditions=react-server --import tsx --test tests/core.test.ts tests/a2ui.test.ts tests/tools.test.ts tests/agent.test.ts tests/architecture.test.ts",
+    "test": "node --conditions=react-server --import tsx --test tests/core.test.ts tests/a2ui.test.ts tests/tools.test.ts tests/agent.test.ts tests/architecture.test.ts tests/titles.test.ts && node --import tsx --test tests/chat-sessions.test.ts",
     "test:integration": "bash scripts/test-integration.sh",
     "test:browser": "bash scripts/test-browser.sh",
     "format": "prettier --write apps packages tests playwright.config.ts package.json README.md",

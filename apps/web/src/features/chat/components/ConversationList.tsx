@@ -1,94 +1,72 @@
 "use client";
-import { api } from "../../../shared/http/api";
 import type { ConversationNavigation } from "../hooks/useConversationNavigation";
-import type { Conversation } from "../model/schema";
 export function ConversationList({
   controller,
+  selectedId,
+  select,
+  removed,
 }: {
   controller: ConversationNavigation;
+  selectedId?: string;
+  select: (id: string) => void;
+  removed: (id: string) => void;
 }) {
-  const {
-    base,
-    navigationPanel,
-    closeDrawer,
-    conversations,
-    setConversations,
-    next,
-    setNext,
-    active,
-    setActive,
-    busy,
-    drawer,
-    setDrawer,
-    run,
-  } = controller;
   return (
-    <aside
-      ref={navigationPanel}
-      hidden={!drawer}
-      id="conversation-navigation"
-      className="conversation-list"
-      aria-label="Conversation navigation"
-    >
-      <div className="row">
-        <h2>Conversations</h2>
-        <button className="conversation-close" onClick={closeDrawer}>
-          Close conversations
-        </button>
-        <button
-          disabled={busy}
-          onClick={() =>
-            run(async () => {
-              const c = await api<Conversation>(base, "POST", {
-                title: "New conversation",
-              });
-              setConversations((items) => [c, ...items]);
-              setActive(c);
-              setDrawer(false);
-            })
-          }
-        >
-          New conversation
-        </button>
-      </div>
-      <nav aria-label="Conversations">
-        {conversations.map((c) => (
-          <button
-            key={c.id}
-            disabled={busy}
-            className={`nav-item ${active?.id === c.id ? "selected" : ""}`}
-            aria-current={active?.id === c.id ? "page" : undefined}
-            onClick={() => {
-              setActive(c);
-              setDrawer(false);
-            }}
-          >
-            {c.title}
-          </button>
-        ))}
-      </nav>
-      {next !== null && (
-        <button
-          disabled={busy}
-          onClick={() =>
-            run(async () => {
-              const r = await api<{
-                conversations: Conversation[];
-                nextOffset: number | null;
-              }>(`${base}?offset=${next}`);
-              setConversations((items) => [
-                ...items,
-                ...r.conversations.filter(
-                  (c) => !items.some((i) => i.id === c.id),
-                ),
-              ]);
-              setNext(r.nextOffset);
-            })
-          }
-        >
-          More conversations
-        </button>
+    <>
+      <div className="sidebar-label">YOUR CHATS</div>
+      {controller.error && (
+        <p className="error" role="alert">
+          {controller.error}
+        </p>
       )}
-    </aside>
+      <nav className="conversation-history" aria-label="Conversations">
+        {controller.conversations.map((conversation) => (
+          <div className="conversation-row" key={conversation.id}>
+            <button
+              className={`nav-item ${selectedId === conversation.id ? "selected" : ""}`}
+              aria-current={selectedId === conversation.id ? "page" : undefined}
+              title={conversation.title}
+              onClick={() => select(conversation.id)}
+            >
+              <span className="truncate">{conversation.title}</span>
+            </button>
+            <details className="conversation-menu">
+              <summary aria-label={`Actions for ${conversation.title}`}>
+                ⋯
+              </summary>
+              <div>
+                <button
+                  disabled={controller.busy}
+                  onClick={() => void controller.rename(conversation)}
+                >
+                  Rename conversation
+                </button>
+                <button
+                  disabled={controller.busy}
+                  onClick={() =>
+                    void controller.remove(conversation).then((ok) => {
+                      if (ok) removed(conversation.id);
+                    })
+                  }
+                >
+                  Delete conversation
+                </button>
+              </div>
+            </details>
+          </div>
+        ))}
+        {!controller.conversations.length && (
+          <p className="sidebar-empty muted">Your chats will appear here.</p>
+        )}
+        {controller.next !== null && (
+          <button
+            disabled={controller.busy}
+            onClick={() => void controller.more()}
+          >
+            More conversations
+          </button>
+        )}
+      </nav>
+    </>
   );
 }

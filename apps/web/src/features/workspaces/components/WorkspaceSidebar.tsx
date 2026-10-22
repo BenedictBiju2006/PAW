@@ -1,67 +1,149 @@
 "use client";
 import { Brand } from "../../../shared/ui/Brand";
+import { ConversationList } from "../../chat/client";
+import { isEmptyInterface } from "../../interfaces/public";
 import type { WorkspaceController } from "../hooks/useWorkspaceController";
-export function WorkspaceSidebar({ model }: { model: WorkspaceController }) {
+import { WorkspaceSettings } from "./WorkspaceSettings";
+export function WorkspaceSidebar({
+  model,
+  close = () => {},
+}: {
+  model: WorkspaceController;
+  close?: () => void;
+}) {
   const {
     user,
-    setError,
-    busy,
-    workspaces,
     active,
-    setActive,
-    setNewWorkspace,
+    workspaces,
+    busy,
     open,
-    signout,
+    overview,
+    setNewWorkspace,
+    setAccount,
+    destination,
+    navigate,
+    newChat,
+    conversations,
+    setDeveloper,
+    developer,
   } = model;
   if (!user) return null;
+  const go = (action: () => void) => {
+    action();
+    close();
+  };
   return (
-    <aside className="sidebar">
-      <Brand />
-      <div className="sidebar-label">YOUR SPACE</div>
-      <button
-        className={`nav-item ${!active ? "selected" : ""}`}
-        aria-label="All workspaces"
-        onClick={() => {
-          setActive(null);
-          window.history.replaceState(null, "", "/");
-          setError("");
-        }}
-      >
-        <span>All workspaces</span>
-        <span className="count">{workspaces.length}</span>
-      </button>
-      <div className="sidebar-label row">
-        WORKSPACES
+    <>
+      <div className="sidebar-top">
+        <Brand />
         <button
-          aria-label="New workspace"
-          className="icon"
-          onClick={() => (setError(""), setNewWorkspace(true))}
+          className="sidebar-close"
+          onClick={close}
+          aria-label="Close navigation"
         >
-          +
+          ×
         </button>
       </div>
-      <nav aria-label="Workspaces">
-        {workspaces.map((w) => (
+      <button
+        className={`nav-item ${!active ? "selected" : ""}`}
+        onClick={() => go(overview)}
+        aria-label="All workspaces"
+      >
+        {active ? "← All workspaces" : "All workspaces"}
+      </button>
+      {active ? (
+        <>
+          <div className="workspace-context">
+            <h1 title={active.name} className="truncate">
+              {active.name}
+            </h1>
+            <WorkspaceSettings model={model} />
+          </div>
           <button
-            key={w.id}
-            className={`nav-item ${active?.id === w.id ? "selected" : ""}`}
-            aria-label={`Open ${w.name}`}
-            disabled={busy}
-            onClick={() => open(w.id)}
+            className={`nav-item ${!developer && destination.kind === "interface" ? "selected" : ""}`}
+            aria-label="Interface"
+            aria-current={
+              !developer && destination.kind === "interface"
+                ? "page"
+                : undefined
+            }
+            onClick={() => go(() => navigate({ kind: "interface" }))}
           >
-            <span className="truncate">{w.name}</span>
+            <span>Interface</span>
+            {!active.interfaceError && !isEmptyInterface(active.interface) && (
+              <span
+                className="interface-available"
+                aria-label="Interface available"
+              >
+                ●
+              </span>
+            )}
           </button>
-        ))}
-      </nav>
+          <button className="nav-item new-chat" onClick={() => go(newChat)}>
+            + New chat
+          </button>
+          <ConversationList
+            controller={conversations}
+            selectedId={
+              !developer && destination.kind === "conversation"
+                ? destination.conversationId
+                : undefined
+            }
+            select={(id) =>
+              go(() => navigate({ kind: "conversation", conversationId: id }))
+            }
+            removed={(id) => {
+              if (
+                destination.kind === "conversation" &&
+                destination.conversationId === id
+              )
+                newChat();
+            }}
+          />
+          <button
+            className={`nav-item sidebar-settings ${developer ? "selected" : ""}`}
+            aria-expanded={developer}
+            onClick={() => go(() => setDeveloper(!developer))}
+          >
+            Developer Tools
+          </button>
+        </>
+      ) : (
+        <>
+          <div className="sidebar-label">WORKSPACES</div>
+          <button
+            className="nav-item"
+            onClick={() => go(() => setNewWorkspace(true))}
+          >
+            + New workspace
+          </button>
+          <nav className="workspace-history" aria-label="Workspaces">
+            {workspaces.map((workspace) => (
+              <button
+                className="nav-item"
+                key={workspace.id}
+                disabled={busy}
+                title={workspace.name}
+                aria-label={`Open ${workspace.name}`}
+                onClick={() => go(() => void open(workspace.id))}
+              >
+                <span className="truncate">{workspace.name}</span>
+              </button>
+            ))}
+          </nav>
+        </>
+      )}
       <div className="sidebar-bottom">
-        <div className="truncate">
-          <strong>Your account</strong>
-          <small>{user.email}</small>
-        </div>
-        <button className="icon" aria-label="Sign out" onClick={signout}>
+        <button className="nav-item" onClick={() => go(() => setAccount(true))}>
+          Account settings
+        </button>
+        <small className="truncate" title={user.email}>
+          {user.email}
+        </small>
+        <button className="nav-item" onClick={model.signout}>
           Sign out
         </button>
       </div>
-    </aside>
+    </>
   );
 }
