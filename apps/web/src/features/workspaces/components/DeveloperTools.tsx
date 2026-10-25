@@ -1,4 +1,5 @@
 "use client";
+import { TokenDiagnostics } from "../../chat/client";
 import { DataView } from "../../collections/client";
 import { InterfaceBuilder } from "../../interfaces/client";
 import type { WorkspaceController } from "../hooks/useWorkspaceController";
@@ -32,6 +33,13 @@ export function DeveloperTools({ model }: { model: WorkspaceController }) {
         Workspace {active.id} · {collections.length} collections · Interface
         revision {active.revision}
       </p>
+      {developer && (
+        <TokenDiagnostics
+          key={active.id}
+          workspaceId={active.id}
+          conversations={model.conversations.conversations}
+        />
+      )}
       <div className="tabs" role="tablist" aria-label="Developer views">
         <button
           role="tab"

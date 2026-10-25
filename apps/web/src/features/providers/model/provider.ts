@@ -10,8 +10,8 @@ export type ProviderEvent =
     }
   | {
       type: "usage";
-      input: number;
-      output: number;
+      input: number | undefined;
+      output: number | undefined;
       reason: string;
       cachedInput?: number;
     };

@@ -3,6 +3,8 @@ import "server-only";
 import type { ModelProvider } from "../../providers/public";
 import { providerError } from "../../providers/public";
 import type { ExecutionTools } from "../../tooling/public";
+import type { ModelRequestDiagnostic } from "../model/diagnostics";
+import { toolDefinitionCharacters } from "./diagnostics";
 import type { AgentEvent } from "../model/events";
 import { bootstrapTools } from "./bootstrap-tools";
 import type { Store } from "./contracts";
@@ -35,6 +37,8 @@ export class AgentOrchestrator {
       AbortSignal.timeout(this.limits.durationMs),
     ]);
     const messages = [...input.history];
+    const system = bootstrapPrompt(input.workspaceId, input.conversationId);
+    const historyCharacters = JSON.stringify(input.history).length;
     const tools = bootstrapTools(this.executor);
     const session = new ToolSession(this.executor, this.store, this.limits);
     const journal = new TextJournal(this.store, input.turnId);
@@ -51,6 +55,7 @@ export class AgentOrchestrator {
     let fragmentId = "";
 
     try {
+      const toolsCharacters = await toolDefinitionCharacters(tools);
       for (; step < this.limits.steps; step++) {
         signal.throwIfAborted();
         if (JSON.stringify(messages).length > this.limits.contextChars)
@@ -66,39 +71,75 @@ export class AgentOrchestrator {
         fragmentId = `text-${step}`;
         requests++;
         requestingModel = true;
-        for await (const event of this.provider.stream({
+        const diagnostic: ModelRequestDiagnostic = {
+          request: requests,
+          provider: this.provider.id,
           model: input.model,
-          apiKey: input.apiKey,
-          system: bootstrapPrompt(input.workspaceId, input.conversationId),
-          messages,
-          tools,
-          signal,
-          maxOutputTokens: Math.max(1, this.limits.outputTokens - tokensOut),
-        })) {
-          signal.throwIfAborted();
-          if (event.type === "text") {
-            charsOut += event.text.length;
-            if (charsOut > 50000)
-              throw new LimitError(
-                "The response size limit was reached. Completed work is saved.",
-              );
-            journal.append(event.text);
-            stepText += event.text;
-            emit({ type: "text", id: fragmentId, text: event.text });
-            if (journal.size >= 12000) await journal.flush();
-          } else if (event.type === "call") {
-            pending.push(event);
-            if (pending.length + calls > this.limits.calls)
-              throw new LimitError(
-                "The tool-call limit was reached. Completed operations are saved.",
-              );
-          } else {
-            if (event.cachedInput !== undefined)
-              cached = (cached ?? 0) + event.cachedInput;
-            tokensIn += event.input;
-            tokensOut += event.output;
-            finishReason = event.reason;
+          status: "incomplete",
+          inputTokens: null,
+          outputTokens: null,
+          cachedInputTokens: null,
+          cumulativeInputTokens: tokensIn,
+          cumulativeOutputTokens: tokensOut,
+          contextCharacters: {
+            system: system.length,
+            history: historyCharacters,
+            tools: toolsCharacters,
+            exchanges:
+              JSON.stringify(messages.slice(input.history.length)).length - 2,
+          },
+        };
+        try {
+          for await (const event of this.provider.stream({
+            model: input.model,
+            apiKey: input.apiKey,
+            system,
+            messages,
+            tools,
+            signal,
+            maxOutputTokens: Math.max(1, this.limits.outputTokens - tokensOut),
+          })) {
+            signal.throwIfAborted();
+            if (event.type === "text") {
+              charsOut += event.text.length;
+              if (charsOut > 50000)
+                throw new LimitError(
+                  "The response size limit was reached. Completed work is saved.",
+                );
+              journal.append(event.text);
+              stepText += event.text;
+              emit({ type: "text", id: fragmentId, text: event.text });
+              if (journal.size >= 12000) await journal.flush();
+            } else if (event.type === "call") {
+              pending.push(event);
+              if (pending.length + calls > this.limits.calls)
+                throw new LimitError(
+                  "The tool-call limit was reached. Completed operations are saved.",
+                );
+            } else {
+              if (event.cachedInput !== undefined)
+                cached = (cached ?? 0) + event.cachedInput;
+              if (event.input !== undefined) {
+                diagnostic.inputTokens =
+                  (diagnostic.inputTokens ?? 0) + event.input;
+                tokensIn += event.input;
+              }
+              if (event.output !== undefined) {
+                diagnostic.outputTokens =
+                  (diagnostic.outputTokens ?? 0) + event.output;
+                tokensOut += event.output;
+              }
+              if (event.cachedInput !== undefined)
+                diagnostic.cachedInputTokens =
+                  (diagnostic.cachedInputTokens ?? 0) + event.cachedInput;
+              finishReason = event.reason;
+            }
           }
+          diagnostic.status = "completed";
+        } finally {
+          diagnostic.cumulativeInputTokens = tokensIn;
+          diagnostic.cumulativeOutputTokens = tokensOut;
+          await this.store.modelRequest?.(input.turnId, diagnostic);
         }
         requestingModel = false;
         await journal.flush();

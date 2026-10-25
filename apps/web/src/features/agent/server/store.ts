@@ -4,6 +4,7 @@ import "server-only";
 import { z } from "zod";
 import { checked, ServiceError } from "../../../shared/db/result";
 import { messageInput } from "../../chat/public";
+import type { ModelRequestDiagnostic } from "../model/diagnostics";
 export type TurnStatus =
   "running" | "completed" | "failed" | "cancelled" | "limited" | "interrupted";
 export type Turn = {
@@ -65,6 +66,25 @@ export class AgentStore {
         blocks: value.content,
       }),
     ) as boolean;
+  }
+  async modelRequest(id: string, diagnostic: ModelRequestDiagnostic) {
+    checked(
+      await this.admin.rpc("record_model_request", {
+        actor: this.actor,
+        turn: id,
+        request_no: diagnostic.request,
+        request_status: diagnostic.status,
+        input_count: diagnostic.inputTokens,
+        output_count: diagnostic.outputTokens,
+        cached_count: diagnostic.cachedInputTokens,
+        cumulative_input: diagnostic.cumulativeInputTokens,
+        cumulative_output: diagnostic.cumulativeOutputTokens,
+        system_chars: diagnostic.contextCharacters.system,
+        history_chars: diagnostic.contextCharacters.history,
+        tools_chars: diagnostic.contextCharacters.tools,
+        exchange_chars: diagnostic.contextCharacters.exchanges,
+      }),
+    );
   }
   async diagnostics(
     id: string,

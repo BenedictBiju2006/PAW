@@ -3,6 +3,7 @@ import { api } from "../../../shared/http/api";
 import { Chat } from "@ai-sdk/react";
 import { transport } from "./transport";
 import type { ChatMessage } from "../components/MessageView";
+import type { ModelRequestDiagnostic } from "../../agent/public";
 import type { Message } from "../model/schema";
 export type SessionChange = {
   workspaceId: string;
@@ -25,6 +26,7 @@ export type TurnStatus = {
   model_requests: number;
   tool_calls: number;
   cached_input_tokens: number | null;
+  request_diagnostics?: ModelRequestDiagnostic[];
 };
 export class ConversationSession {
   readonly chat: Chat<ChatMessage>;

@@ -32,8 +32,8 @@ export const openaiProvider: ModelProvider = {
       else if (part.type === "finish")
         yield {
           type: "usage",
-          input: part.totalUsage.inputTokens ?? 0,
-          output: part.totalUsage.outputTokens ?? 0,
+          input: part.totalUsage.inputTokens,
+          output: part.totalUsage.outputTokens,
           reason: part.finishReason,
           cachedInput: part.totalUsage.inputTokenDetails?.cacheReadTokens,
         };

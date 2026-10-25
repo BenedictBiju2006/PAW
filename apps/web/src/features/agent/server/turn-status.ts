@@ -9,7 +9,7 @@ export async function listTurnStatuses(
   const result = await db
     .from("agent_turns")
     .select(
-      "id,status,notice,input_tokens,output_tokens,provider,model,model_requests,tool_calls,cached_input_tokens,created_at",
+      "id,status,notice,input_tokens,output_tokens,provider,model,model_requests,tool_calls,cached_input_tokens,request_diagnostics,created_at",
     )
     .eq("workspace_id", workspaceId)
     .eq("conversation_id", childId)

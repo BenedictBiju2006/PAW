@@ -1121,6 +1121,63 @@ test(
           model: "test",
         };
         assert.equal((await store.start(start)).started, true);
+        const requestArgs = {
+          actor: a,
+          turn: turnId,
+          request_no: 1,
+          request_status: "completed",
+          input_count: 0,
+          output_count: 0,
+          cached_count: null,
+          cumulative_input: 0,
+          cumulative_output: 0,
+          system_chars: 100,
+          history_chars: 200,
+          tools_chars: 300,
+          exchange_chars: 0,
+        };
+        assert.ok(
+          (
+            await admin.rpc("record_model_request", {
+              ...requestArgs,
+              request_no: 41,
+            })
+          ).error,
+        );
+        assert.ok(
+          (
+            await admin.rpc("record_model_request", {
+              ...requestArgs,
+              input_count: -1,
+            })
+          ).error,
+        );
+        assert.ok(
+          (
+            await admin.rpc("record_model_request", {
+              ...requestArgs,
+              actor: b,
+            })
+          ).error,
+        );
+        assert.ok((await db.rpc("record_model_request", requestArgs)).error);
+        assert.equal(
+          (await admin.rpc("record_model_request", requestArgs)).error,
+          null,
+        );
+        assert.equal(
+          (await admin.rpc("record_model_request", requestArgs)).error,
+          null,
+        );
+        const initialDiagnostic = (
+          await db
+            .from("agent_turns")
+            .select("request_diagnostics")
+            .eq("id", turnId)
+            .single()
+        ).data!.request_diagnostics;
+        assert.equal(initialDiagnostic.length, 1); // idempotent request index
+        assert.equal(initialDiagnostic[0].cachedInputTokens, null);
         assert.equal((await store.start(start)).started, false);
         await assert.rejects(() =>
           store.start({ ...start, text: "Different request" }),
@@ -1309,6 +1366,62 @@ test(
           ).data?.status,
           "completed",
         );
+        const diagnosticTurn = (
+          await db
+            .from("agent_turns")
+            .select(
+              "input_tokens,output_tokens,model_requests,request_diagnostics",
+            )
+            .eq("id", turnId)
+            .single()
+        ).data!;
+        assert.equal(
+          diagnosticTurn.request_diagnostics.length,
+          diagnosticTurn.model_requests,
+        );
+        assert.equal(
+          diagnosticTurn.request_diagnostics.at(-1).cumulativeInputTokens,
+          diagnosticTurn.input_tokens,
+        );
+        assert.equal(
+          diagnosticTurn.request_diagnostics.at(-1).cumulativeOutputTokens,
+          diagnosticTurn.output_tokens,
+        );
+        assert.ok(
+          diagnosticTurn.request_diagnostics.every(
+            (row: any) =>
+              row.cachedInputTokens === null &&
+              row.provider === "scripted-mock",
+          ),
+        );
+        const { listTurnStatuses } =
+          await import("../apps/web/src/features/agent/server/turn-status");
+        const visible = await listTurnStatuses(db, w.id, c.id);
+        assert.deepEqual(
+          visible.find((row: any) => row.id === turnId).request_diagnostics,
+          diagnosticTurn.request_diagnostics,
+        );
+        const rpcArgs = {
+          actor: a,
+          turn: turnId,
+          request_no: 1,
+          request_status: "completed",
+          input_count: 20,
+          output_count: 10,
+          cached_count: null,
+          cumulative_input: 20,
+          cumulative_output: 10,
+          system_chars: 10,
+          history_chars: 10,
+          tools_chars: 10,
+          exchange_chars: 0,
+        };
+        assert.ok((await db.rpc("record_model_request", rpcArgs)).error);
+        assert.ok(
+          (await admin.rpc("record_model_request", { ...rpcArgs, actor: b }))
+            .error,
+        );
+        assert.ok((await admin.rpc("record_model_request", rpcArgs)).error); // finished turn is immutable
         assert.equal((await service.workspace(w.id)).revision, 2);
         assert.equal((await service.inspect(w.id))[0].components.length, 3);
         assert.equal(

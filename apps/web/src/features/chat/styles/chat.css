@@ -291,3 +291,29 @@
     font-size: 20px;
   }
 }
+
+.token-diagnostics {
+  margin-block: 1rem;
+  min-width: 0;
+}
+.token-diagnostics details {
+  margin-block: 0.75rem;
+}
+.token-diagnostics-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.token-diagnostics-scroll table {
+  width: 100%;
+  font-variant-numeric: tabular-nums;
+}
+.token-diagnostics-scroll th,
+.token-diagnostics-scroll td {
+  padding: 0.5rem;
+  text-align: left;
+  white-space: nowrap;
+}
+.token-diagnostics-scroll caption {
+  text-align: left;
+  padding-block: 0.5rem;
+}
