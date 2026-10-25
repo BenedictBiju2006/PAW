@@ -9,4 +9,8 @@ export interface ExecutionTools {
       | undefined;
   };
   execute(id: string, input: unknown): Promise<ToolResult>;
+  schemaRecovery(
+    id: string,
+    args: Record<string, unknown>,
+  ): Promise<ToolResult>;
 }

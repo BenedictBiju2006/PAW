@@ -2,7 +2,12 @@ import "server-only";
 import { z } from "zod";
 import { registerCollectionsTools } from "../features/collections/server/public";
 import { registerInterfacesTools } from "../features/interfaces/server/public";
-import { registrar, ToolRegistry } from "../features/tooling/server/public";
+import {
+  registrar,
+  ToolRegistry,
+  ToolExecutor,
+  ToolGuidanceError,
+} from "../features/tooling/server/public";
 import { registerWorkspacesTools } from "../features/workspaces/server/public";
 import { ServiceError } from "../shared/db/result";
 import {
@@ -51,7 +56,16 @@ export function createToolRegistry() {
       })
       .strict(),
     "Array of compact tool summaries.",
-    async (a) => registry.search(a.query, a.limit),
+    async (a, c) => {
+      const executor = new ToolExecutor(registry, c);
+      const candidates = registry.search(a.query, registry.summaries().length);
+      const accessible = await Promise.all(
+        candidates.map(async (tool) =>
+          (await executor.discoveryAccess(tool.id)) ? null : tool,
+        ),
+      );
+      return accessible.filter((tool) => tool !== null).slice(0, a.limit);
+    },
   );
   add(
     "describe_tool",
@@ -60,9 +74,13 @@ export function createToolRegistry() {
     ["schema", "discovery"],
     z.object({ toolId: z.string().max(100) }).strict(),
     "Tool metadata, JSON input/output schemas and result description.",
-    async (a) => {
+    async (a, c) => {
       if (!registry.resolve(a.toolId))
         throw new ServiceError("Unknown tool identifier.", 404);
+      const denied = await new ToolExecutor(registry, c).discoveryAccess(
+        a.toolId,
+      );
+      if (denied) throw new ToolGuidanceError(denied.error, 403);
       return registry.describe(a.toolId);
     },
   );

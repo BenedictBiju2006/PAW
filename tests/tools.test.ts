@@ -37,12 +37,12 @@ test("discovery metadata and official MCP adapter use the same executor", async 
     );
     const described = await client.callTool({
       name: "describe_tool",
-      arguments: { toolId: "create_workspace" },
+      arguments: { toolId: "inspect_interface" },
     });
     assert.equal(
       JSON.parse((described.content as any)[0].text).data.inputSchema.properties
-        .name.type,
-      "string",
+        .workspaceId.format,
+      "uuid",
     );
     const failed = await client.callTool({
       name: "no_such_tool",
@@ -72,7 +72,7 @@ test("executor rejects unknown tools, invalid inputs, permission violations and 
       { name: "Test", userId: "forged" },
       "invalid_arguments",
     ],
-    ["inspect_resource", { uri: "file:///etc/passwd" }, "operation_failed"],
+    ["inspect_resource", { uri: "file:///etc/passwd" }, "resource_invalid"],
     [
       "delete_record",
       {

@@ -2542,3 +2542,101 @@ test(
     );
   },
 );
+
+test(
+  "tool recovery suggests only authorized resources and hides unauthorized schemas",
+  { skip: !enabled },
+  async () => {
+    const { createToolRegistry } =
+      await import("../apps/web/src/composition/tools");
+    const { ToolExecutor } =
+      await import("../apps/web/src/features/tooling/server/executor");
+    const { randomUUID } = await import("node:crypto");
+    const owner = createWorkspaceServices(client(a), a);
+    const stranger = createWorkspaceServices(client(b), b);
+    const workspace = await owner.create("Tool recovery scope");
+    const privateWorkspace = await stranger.create(
+      "Private tool recovery scope",
+    );
+    const collection = await owner.createCollection(workspace.id, {
+      name: "Movies",
+      fields: [
+        { key: "title", label: "Title", type: "string", required: true },
+      ],
+    });
+    const executor = new ToolExecutor(createToolRegistry(), {
+      service: owner,
+      workspaceId: workspace.id,
+      permissions: new Set(["read"]),
+    });
+    const base = `paw://workspaces/${workspace.id}`;
+    const malformed = await executor.execute("inspect_resource", {
+      uri: `${base}/collection/${collection.id}`,
+    });
+    assert.ok(!malformed.ok && malformed.error.code === "resource_invalid");
+    if (!malformed.ok) {
+      assert.ok(
+        malformed.error.uriPatterns!.includes(
+          `${base}/collections/{collectionId}`,
+        ),
+      );
+      assert.equal(
+        malformed.error.nextAction!.arguments.workspaceId,
+        workspace.id,
+      );
+      assert.equal(malformed.error.nextAction!.arguments.kind, "collections");
+    }
+    const privateResult = await executor.execute("inspect_resource", {
+      uri: `paw://workspaces/${privateWorkspace.id}/interface`,
+    });
+    assert.ok(!privateResult.ok && privateResult.error.code === "forbidden");
+    assert.ok(!JSON.stringify(privateResult).includes(privateWorkspace.id));
+    const missingId = randomUUID();
+    const missing = await executor.execute("inspect_resource", {
+      uri: `${base}/collections/${collection.id}/records/${missingId}`,
+    });
+    assert.ok(!missing.ok && missing.error.code === "not_found");
+    assert.ok(!JSON.stringify(missing).includes(missingId));
+    if (!missing.ok)
+      assert.equal(
+        missing.error.nextAction!.arguments.collectionId,
+        collection.id,
+      );
+    const preview = await executor.schemaRecovery("add_ui_components", {
+      workspaceId: workspace.id,
+    });
+    assert.ok(
+      !preview.ok &&
+        preview.error.code === "forbidden" &&
+        !preview.error.inputSchema,
+    );
+    const description = await executor.execute("describe_tool", {
+      toolId: "add_ui_components",
+    });
+    assert.ok(!description.ok && description.error.code === "forbidden");
+    const discovery = await executor.execute("search_tools", {
+      query: "ui",
+      limit: 30,
+    });
+    assert.ok(discovery.ok);
+    if (discovery.ok)
+      assert.ok(
+        !(discovery.data as any[]).some(
+          (tool) => tool.id === "add_ui_components",
+        ),
+      );
+    const unscoped = new ToolExecutor(createToolRegistry(), {
+      service: owner,
+      permissions: new Set(["read"]),
+    });
+    const inaccessible = await unscoped.execute("inspect_resource", {
+      uri: `paw://workspaces/${privateWorkspace.id}/interface`,
+    });
+    const nonexistent = await unscoped.execute("inspect_resource", {
+      uri: `paw://workspaces/${randomUUID()}/interface`,
+    });
+    assert.ok(!inaccessible.ok && !nonexistent.ok);
+    if (!inaccessible.ok && !nonexistent.ok)
+      assert.deepEqual(inaccessible.error, nonexistent.error);
+  },
+);

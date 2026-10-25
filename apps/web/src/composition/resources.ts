@@ -2,6 +2,8 @@ import "server-only";
 import { z } from "zod";
 import { catalogComponents } from "../features/interfaces/public";
 import type { ToolContext as BaseContext } from "../features/tooling/public";
+import { resourceFeedback, validResourceUri } from "./resource-guidance";
+import { ToolGuidanceError } from "../features/tooling/server/public";
 import { ServiceError } from "../shared/db/result";
 import type { WorkspaceServices } from "./services";
 type ToolContext = BaseContext<WorkspaceServices>;
@@ -163,114 +165,139 @@ export async function inspectResource(uri: string, context: ToolContext) {
     };
   const match = /^paw:\/\/workspaces\/([0-9a-f-]{36})(?:\/(.*))?$/.exec(uri);
   if (!match || !z.uuid().safeParse(match[1]).success)
-    throw new ServiceError("Invalid resource identifier.");
+    throw await resourceFeedback(uri, context, "resource_invalid");
   const [, workspaceId, tail] = match;
   if (scope && scope !== workspaceId)
-    throw new ServiceError("Resource is outside this workspace.", 404);
-  const workspace = await service.workspace(workspaceId);
-  const base = workspaceUri(workspaceId);
-  if (!tail)
-    return {
-      uri,
-      kind: "workspace",
-      id: workspaceId,
-      name: workspace.name,
-      revision: workspace.revision,
-      relationships: {
-        collections: `${base}/collections`,
-        interface: `${base}/interface`,
-        revisions: `${base}/revisions`,
-      },
-      operations: ["rename_workspace", "list_resources", "inspect_interface"],
-    };
-  if (tail === "interface")
-    return {
-      uri,
-      kind: "interface",
-      revision: workspace.revision,
-      definition: workspace.interface,
-      error: workspace.interfaceError,
-      operations: [
-        "add_ui_components",
-        "update_ui_component",
-        "apply_interface_messages",
-        "save_interface",
-        "list_revisions",
-      ],
-    };
-  if (tail === "collections")
-    return listResources(
-      { kind: "collections", workspaceId, offset: 0, limit: 25 },
-      context,
-    );
-  if (tail === "revisions")
-    return listResources(
-      { kind: "revisions", workspaceId, offset: 0, limit: 25 },
-      context,
-    );
-  const parts = tail.split("/");
-  if (parts[0] === "collections" && z.uuid().safeParse(parts[1]).success) {
-    if (parts.length === 2 || (parts.length === 3 && parts[2] === "schema")) {
-      const c = await service.collection(workspaceId, parts[1]);
+    throw await resourceFeedback(uri, context, "forbidden");
+  let workspace;
+  try {
+    workspace = await service.workspace(workspaceId);
+  } catch (error) {
+    if (error instanceof ServiceError && [403, 404].includes(error.status))
+      throw await resourceFeedback(
+        uri,
+        context,
+        error.status === 403 ? "forbidden" : "not_found",
+      );
+    throw error;
+  }
+  if (!new RegExp(validResourceUri).test(uri))
+    throw await resourceFeedback(uri, context, "resource_invalid", workspaceId);
+  try {
+    const base = workspaceUri(workspaceId);
+    if (!tail)
       return {
         uri,
-        kind: parts[2] === "schema" ? "schema" : "collection",
-        ...c,
-        immutableSchema: true,
+        kind: "workspace",
+        id: workspaceId,
+        name: workspace.name,
+        revision: workspace.revision,
         relationships: {
-          workspace: base,
-          schema: `${base}/collections/${c.id}/schema`,
+          collections: `${base}/collections`,
+          interface: `${base}/interface`,
+          revisions: `${base}/revisions`,
         },
+        operations: ["rename_workspace", "list_resources", "inspect_interface"],
+      };
+    if (tail === "interface")
+      return {
+        uri,
+        kind: "interface",
+        revision: workspace.revision,
+        definition: workspace.interface,
+        error: workspace.interfaceError,
         operations: [
-          "query_records",
-          "create_record",
-          "update_record",
-          "delete_record",
-          "aggregate_records",
+          "add_ui_components",
+          "update_ui_component",
+          "apply_interface_messages",
+          "save_interface",
+          "list_revisions",
         ],
       };
+    if (tail === "collections")
+      return listResources(
+        { kind: "collections", workspaceId, offset: 0, limit: 25 },
+        context,
+      );
+    if (tail === "revisions")
+      return listResources(
+        { kind: "revisions", workspaceId, offset: 0, limit: 25 },
+        context,
+      );
+    const parts = tail.split("/");
+    if (parts[0] === "collections" && z.uuid().safeParse(parts[1]).success) {
+      if (parts.length === 2 || (parts.length === 3 && parts[2] === "schema")) {
+        const c = await service.collection(workspaceId, parts[1]);
+        return {
+          uri,
+          kind: parts[2] === "schema" ? "schema" : "collection",
+          ...c,
+          immutableSchema: true,
+          relationships: {
+            workspace: base,
+            schema: `${base}/collections/${c.id}/schema`,
+          },
+          operations: [
+            "query_records",
+            "create_record",
+            "update_record",
+            "delete_record",
+            "aggregate_records",
+          ],
+        };
+      }
+      if (
+        parts.length === 4 &&
+        parts[2] === "records" &&
+        z.uuid().safeParse(parts[3]).success
+      )
+        return {
+          uri,
+          kind: "record",
+          record: await service.record(workspaceId, parts[1], parts[3]),
+          schema: (await service.collection(workspaceId, parts[1])).fields,
+          operations: ["update_record", "delete_record"],
+        };
     }
     if (
-      parts.length === 4 &&
-      parts[2] === "records" &&
-      z.uuid().safeParse(parts[3]).success
+      parts[0] === "revisions" &&
+      parts.length === 2 &&
+      /^[1-9]\d*$/.test(parts[1])
     )
       return {
         uri,
-        kind: "record",
-        record: await service.record(workspaceId, parts[1], parts[3]),
-        schema: (await service.collection(workspaceId, parts[1])).fields,
-        operations: ["update_record", "delete_record"],
+        kind: "revision",
+        revision: await service.revision(workspaceId, Number(parts[1])),
+        operations: ["save_interface"],
       };
+    if (parts[0] === "components" && parts.length === 3) {
+      const component = (await service.inspect(workspaceId))
+        .find((s) => s.surfaceId === parts[1])
+        ?.components.find((c) => c.id === parts[2]);
+      if (!component) throw new ServiceError("Component not found.", 404);
+      return {
+        uri,
+        kind: "component",
+        component,
+        schema: catalogComponents()[component.component],
+        relationships: { interface: `${base}/interface` },
+        operations: [
+          "update_ui_component",
+          "apply_interface_messages",
+          "inspect_component",
+        ],
+      };
+    }
+    throw await resourceFeedback(uri, context, "resource_invalid", workspaceId);
+  } catch (error) {
+    if (error instanceof ToolGuidanceError) throw error;
+    if (error instanceof ServiceError && [403, 404].includes(error.status))
+      throw await resourceFeedback(
+        uri,
+        context,
+        error.status === 403 ? "forbidden" : "not_found",
+        workspaceId,
+      );
+    throw error;
   }
-  if (
-    parts[0] === "revisions" &&
-    parts.length === 2 &&
-    /^[1-9]\d*$/.test(parts[1])
-  )
-    return {
-      uri,
-      kind: "revision",
-      revision: await service.revision(workspaceId, Number(parts[1])),
-      operations: ["save_interface"],
-    };
-  if (parts[0] === "components" && parts.length === 3) {
-    const component = (await service.inspect(workspaceId))
-      .find((s) => s.surfaceId === parts[1])
-      ?.components.find((c) => c.id === parts[2]);
-    if (!component) throw new ServiceError("Component not found.", 404);
-    return {
-      uri,
-      kind: "component",
-      component,
-      schema: catalogComponents()[component.component],
-      relationships: { interface: `${base}/interface` },
-      operations: [
-        "update_ui_component",
-        "apply_interface_messages",
-        "inspect_component",
-      ],
-    };
-  }
-  throw new ServiceError("Invalid resource identifier.");
 }

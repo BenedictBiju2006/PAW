@@ -38,5 +38,10 @@ export type ToolResult =
         message: string;
         guidance: string;
         issues?: unknown;
+        nextAction?: { tool: string; arguments: Record<string, unknown> };
+        inputSchema?: Record<string, unknown>;
+        uriPatterns?: string[];
+        /** Trusted validation rule used only to recognize a corrected URI. */
+        validUriPattern?: string;
       };
     };
