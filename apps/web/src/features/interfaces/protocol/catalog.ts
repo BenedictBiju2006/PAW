@@ -11,7 +11,9 @@ import {
   TextApi,
   TextFieldApi,
 } from "@a2ui/web_core/v0_9/basic_catalog";
-import { z } from "zod";
+// A2UI APIs contain Zod 3 schemas. Pin the same version under an explicit
+// alias so npm hoisting cannot substitute application Zod 4.
+import { z } from "zod-v3";
 
 export const PROTOCOL = "v0.9.1" as const;
 export const CATALOG_ID = "https://paw.local/catalogs/workspace-v1.json";
@@ -105,7 +107,29 @@ export const schemaCatalog = new Catalog(
       "PAW workspace catalog. Use root as the surface root. Persistent records live in authorized collections, not updateDataModel. Supported events: paw.refresh, paw.createRecord (collectionId and data context). No network navigation or arbitrary functions.",
   },
 );
+export class CatalogSchemaError extends Error {
+  readonly code = "catalog_schema_error";
+  constructor(component: string, cause: unknown) {
+    super(
+      `PAW catalog schema failure for ${component}. This is an internal schema error, not invalid interface properties.`,
+      { cause },
+    );
+    this.name = "CatalogSchemaError";
+  }
+}
+// Invalid input produces an unsuccessful result; a throw here means the schema
+// itself is broken (including incompatible nested Zod schemas).
+export function assertCatalogSchemas() {
+  for (const api of componentApis) {
+    try {
+      api.schema.safeParse({});
+    } catch (cause) {
+      throw new CatalogSchemaError(api.name, cause);
+    }
+  }
+}
 export function catalogDocument() {
+  assertCatalogSchemas();
   return schemaCatalog.toJson();
 }
 

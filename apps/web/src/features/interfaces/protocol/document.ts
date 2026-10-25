@@ -5,9 +5,15 @@ import {
   STRICT_VALIDATION,
 } from "@a2ui/web_core/v0_9";
 import { isSafeRegex } from "@a2ui/web_core/v0_9/basic_catalog";
-import { z } from "zod";
+import { z } from "zod-v3";
 import type { Collection } from "../../collections/public";
-import { CATALOG_ID, PROTOCOL, schemaCatalog } from "./catalog";
+import {
+  CATALOG_ID,
+  PROTOCOL,
+  schemaCatalog,
+  assertCatalogSchemas,
+  CatalogSchemaError,
+} from "./catalog";
 export type Interface = { messages: A2uiMessage[] };
 export type Component = {
   id: string;
@@ -34,6 +40,7 @@ export function emptyInterface(): Interface {
 // Catalog schemas, protocol parsing, references and incremental updates are handled
 // by the official processor. PAW adds resource bounds and persistence permissions.
 export function parseInterface(input: unknown): Interface {
+  assertCatalogSchemas();
   const text = JSON.stringify(input);
   if (!text || text.length > 250000)
     throw new Error("Interface must be at most 250,000 characters.");
@@ -106,11 +113,13 @@ export const interfaceSchema = z
     try {
       return parseInterface(value);
     } catch (error) {
+      if (error instanceof CatalogSchemaError) throw error;
       ctx.addIssue({ code: "custom", message: (error as Error).message });
       return z.NEVER;
     }
   });
 export function inspectInterface(definition: Interface) {
+  assertCatalogSchemas();
   const processor = new MessageProcessor([schemaCatalog], undefined, {
     version: PROTOCOL,
     validationConfig: STRICT_VALIDATION,

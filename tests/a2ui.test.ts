@@ -13,6 +13,8 @@ import {
   validateBindings,
 } from "../apps/web/src/features/interfaces/protocol/document";
 import {
+  DataTableApi,
+  CatalogSchemaError,
   schemaCatalog,
   CATALOG_ID,
   PROTOCOL,
@@ -211,4 +213,171 @@ test("catalog is machine readable and exposes persistent components without mode
     "CollectionChart",
   ])
     assert.ok(catalog.components[name]);
+});
+
+for (const component of ["DataTable", "CollectionForm", "CollectionChart"]) {
+  test(`${component} validates without an optional title`, () => {
+    const definition = appendComponents(emptyInterface(), [
+      {
+        id: "collection_view",
+        component,
+        collectionId: "11111111-1111-4111-8111-111111111111",
+        ...(component === "CollectionChart" ? { field: "title" } : {}),
+      },
+    ]);
+    assert.equal(inspectInterface(definition)[0].components.length, 2);
+  });
+}
+
+test("collection schemas expose accurate discovery properties and reject invented fields", () => {
+  const catalog = catalogDocument() as any;
+  for (const [name, keys] of [
+    ["DataTable", ["collectionId", "title", "presentation"]],
+    ["CollectionForm", ["collectionId", "title"]],
+    ["CollectionChart", ["collectionId", "field", "title"]],
+  ] as const) {
+    const schema = catalog.components[name];
+    assert.ok(schema.properties.collectionId);
+    assert.match(schema.properties.title.$ref, /DynamicString$/);
+    for (const key of keys) assert.ok(schema.properties[key]);
+    assert.equal(schema.properties.columns, undefined);
+    assert.equal(schema.properties.fields, undefined);
+    for (const title of ["Movies", { path: "/title" }])
+      assert.doesNotThrow(() =>
+        appendComponents(emptyInterface(), [
+          {
+            id: "view",
+            component: name,
+            collectionId: "11111111-1111-4111-8111-111111111111",
+            title,
+            ...(name === "CollectionChart" ? { field: "title" } : {}),
+          },
+        ]),
+      );
+    for (const props of [{ columns: [] }, { fields: [] }, { title: 42 }])
+      assert.throws(
+        () =>
+          appendComponents(emptyInterface(), [
+            {
+              id: "view",
+              component: name,
+              collectionId: "11111111-1111-4111-8111-111111111111",
+              ...(name === "CollectionChart" ? { field: "title" } : {}),
+              ...props,
+            },
+          ]),
+        /Validation failed for component/,
+      );
+  }
+});
+
+test("schema construction errors are distinguished from invalid component properties", async () => {
+  const original = DataTableApi.schema.safeParse;
+  try {
+    DataTableApi.schema.safeParse = () => {
+      throw new Error('Invalid element at key "title": expected a Zod schema');
+    };
+    assert.throws(() => parseInterface(emptyInterface()), CatalogSchemaError);
+    assert.throws(
+      () => catalogDocument(),
+      /internal schema error, not invalid interface properties/,
+    );
+  } finally {
+    DataTableApi.schema.safeParse = original;
+  }
+});
+
+test("service saves, inspects and updates a heading, table and form without changing collection data", async () => {
+  const { InterfaceService } =
+    await import("../apps/web/src/features/interfaces/server/service");
+  const id = "11111111-1111-4111-8111-111111111111";
+  const collections = [
+    {
+      id,
+      workspace_id: id,
+      name: "Movies",
+      fields: [
+        {
+          key: "title",
+          label: "Title",
+          type: "string" as const,
+          required: true,
+        },
+      ],
+    },
+  ];
+  const before = JSON.stringify(collections);
+  let workspace = { id, revision: 1, interface: emptyInterface() };
+  const db = {
+    from(table: string) {
+      assert.equal(table, "workspaces");
+      return {
+        update(value: { interface: ReturnType<typeof emptyInterface> }) {
+          const query = {
+            eq() {
+              return query;
+            },
+            select() {
+              return query;
+            },
+            async maybeSingle() {
+              workspace = {
+                ...workspace,
+                interface: value.interface,
+                revision: workspace.revision + 1,
+              };
+              return { data: workspace, error: null };
+            },
+          };
+          return query;
+        },
+      };
+    },
+  };
+  const service = new InterfaceService(
+    db as any,
+    id,
+    { workspace: async () => workspace },
+    { collections: async () => collections },
+  );
+  const definition = appendComponents(emptyInterface(), [
+    { id: "heading", component: "Text", text: "Movies", variant: "h2" },
+    { id: "table", component: "DataTable", collectionId: id },
+    { id: "form", component: "CollectionForm", collectionId: id },
+  ]);
+  await service.saveInterface(id, definition, 1);
+  assert.equal((await service.inspect(id))[0].components.length, 4);
+  await service.applyInterfaceMessages(
+    id,
+    [
+      {
+        version: PROTOCOL,
+        updateComponents: {
+          surfaceId: "workspace",
+          components: [
+            {
+              id: "heading",
+              component: "Text",
+              text: "My movies",
+              variant: "h2",
+            },
+            {
+              id: "table",
+              component: "DataTable",
+              collectionId: id,
+              title: { path: "/title" },
+              presentation: "list",
+            },
+          ],
+        },
+      },
+    ],
+    2,
+  );
+  const components = (await service.inspect(id))[0].components;
+  assert.equal(components.find((c) => c.id === "heading")?.text, "My movies");
+  assert.equal(components.find((c) => c.id === "table")?.presentation, "list");
+  assert.equal(components.find((c) => c.id === "form")?.collectionId, id);
+  assert.equal(JSON.stringify(collections), before);
+  assert.equal(workspace.revision, 3);
 });

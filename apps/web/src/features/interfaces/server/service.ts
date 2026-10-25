@@ -4,7 +4,7 @@ import { z } from "zod";
 import { checked, ServiceError } from "../../../shared/db/result";
 import type { CollectionService } from "../../collections/server/public";
 import type { WorkspaceAccess } from "../../workspaces/server/public";
-import { catalogDocument } from "../protocol/catalog";
+import { catalogDocument, CatalogSchemaError } from "../protocol/catalog";
 import { inspectInterface, validateBindings } from "../protocol/document";
 import { upgradeInterface } from "../protocol/legacy";
 export class InterfaceService {
@@ -61,7 +61,11 @@ export class InterfaceService {
       definition = upgradeInterface(input);
       validateBindings(definition, collections);
     } catch (error) {
-      throw new ServiceError((error as Error).message);
+      throw new ServiceError(
+        (error as Error).message,
+        error instanceof CatalogSchemaError ? 500 : 400,
+        error,
+      );
     }
     const expected = z.number().int().positive().parse(revision);
     const result = checked(

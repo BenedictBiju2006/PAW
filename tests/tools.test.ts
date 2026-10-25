@@ -105,3 +105,21 @@ test("executor rejects unknown tools, invalid inputs, permission violations and 
   assert.equal(denied.ok, false);
   if (!denied.ok) assert.equal(denied.error.code, "forbidden");
 });
+
+test("agent discovery returns collection component schemas with only supported properties", async () => {
+  const executor = new ToolExecutor(createToolRegistry(), {
+    service,
+    permissions: new Set(["read"]),
+  });
+  for (const component of ["DataTable", "CollectionForm", "CollectionChart"]) {
+    const result = await executor.execute("inspect_component", { component });
+    assert.equal(result.ok, true);
+    if (!result.ok) throw new Error(result.error.message);
+    const schema = result.data as any;
+    assert.equal(schema.properties.collectionId.format, "uuid");
+    assert.match(schema.properties.title.$ref, /DynamicString$/);
+    assert.equal(schema.properties.columns, undefined);
+    assert.equal(schema.properties.fields, undefined);
+    assert.equal(schema.unevaluatedProperties, false);
+  }
+});

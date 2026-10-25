@@ -231,6 +231,58 @@ for (const width of [390, 768, 1024, 1440, 1920])
         name: "Value counts for rating across all records",
       }),
     ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Add to Films", exact: true }),
+    ).toBeVisible();
+    const inspectedResponse = await page.request.get(`/api/${base}`);
+    expect(inspectedResponse.ok()).toBeTruthy();
+    const inspected = await inspectedResponse.json();
+    const updated = await request(
+      `${base}/interface`,
+      {
+        revision: inspected.revision,
+        messages: [
+          {
+            version: "v0.9.1",
+            updateComponents: {
+              surfaceId: "workspace",
+              components: [
+                {
+                  id: "form",
+                  component: "CollectionForm",
+                  collectionId: collection.id,
+                  title: "Add a movie",
+                },
+                {
+                  id: "table",
+                  component: "DataTable",
+                  collectionId: collection.id,
+                  title: { path: "/tableTitle" },
+                },
+              ],
+            },
+          },
+          {
+            version: "v0.9.1",
+            updateDataModel: {
+              surfaceId: "workspace",
+              path: "/tableTitle",
+              value: "Saved movies",
+            },
+          },
+        ],
+      },
+      "PATCH",
+    );
+    expect(updated.revision).toBe(inspected.revision + 1);
+    await page.reload();
+    await expect(
+      page.getByRole("heading", { name: "Saved movies", exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Add a movie", exact: true }),
+    ).toBeVisible();
+    await expect(page.getByRole("cell", { name: "Arrival" })).toBeVisible();
     const pane = await page.locator(".primary-interface").boundingBox();
     expect(pane!.width).toBeGreaterThan(width - (width > 1024 ? 280 : 1));
     await geometry(page);

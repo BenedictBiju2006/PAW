@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "zod-v3";
 const id = z.string().uuid();
 const key = z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,63}$/);
 export type Node = {
