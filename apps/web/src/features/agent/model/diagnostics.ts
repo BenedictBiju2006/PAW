@@ -9,6 +9,12 @@ export type ModelRequestDiagnostic = {
   cachedInputTokens: number | null;
   cumulativeInputTokens: number;
   cumulativeOutputTokens: number;
+  compaction?: {
+    rawExchangeCharacters: number;
+    sentExchangeCharacters: number;
+    exchangesCompacted: number;
+    charactersSaved: number;
+  };
   contextCharacters: {
     system: number;
     history: number;

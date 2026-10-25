@@ -69,21 +69,35 @@ export class AgentStore {
   }
   async modelRequest(id: string, diagnostic: ModelRequestDiagnostic) {
     checked(
-      await this.admin.rpc("record_model_request", {
-        actor: this.actor,
-        turn: id,
-        request_no: diagnostic.request,
-        request_status: diagnostic.status,
-        input_count: diagnostic.inputTokens,
-        output_count: diagnostic.outputTokens,
-        cached_count: diagnostic.cachedInputTokens,
-        cumulative_input: diagnostic.cumulativeInputTokens,
-        cumulative_output: diagnostic.cumulativeOutputTokens,
-        system_chars: diagnostic.contextCharacters.system,
-        history_chars: diagnostic.contextCharacters.history,
-        tools_chars: diagnostic.contextCharacters.tools,
-        exchange_chars: diagnostic.contextCharacters.exchanges,
-      }),
+      await this.admin.rpc(
+        diagnostic.compaction
+          ? "record_model_request_compaction"
+          : "record_model_request",
+        {
+          actor: this.actor,
+          turn: id,
+          request_no: diagnostic.request,
+          request_status: diagnostic.status,
+          input_count: diagnostic.inputTokens,
+          output_count: diagnostic.outputTokens,
+          cached_count: diagnostic.cachedInputTokens,
+          cumulative_input: diagnostic.cumulativeInputTokens,
+          cumulative_output: diagnostic.cumulativeOutputTokens,
+          system_chars: diagnostic.contextCharacters.system,
+          history_chars: diagnostic.contextCharacters.history,
+          tools_chars: diagnostic.contextCharacters.tools,
+          exchange_chars: diagnostic.contextCharacters.exchanges,
+          ...(diagnostic.compaction
+            ? {
+                raw_exchange_chars: diagnostic.compaction.rawExchangeCharacters,
+                sent_exchange_chars:
+                  diagnostic.compaction.sentExchangeCharacters,
+                exchanges_compacted: diagnostic.compaction.exchangesCompacted,
+                characters_saved: diagnostic.compaction.charactersSaved,
+              }
+            : {}),
+        },
+      ),
     );
   }
   async diagnostics(

@@ -12,6 +12,7 @@ import { agentLimits, LimitError } from "./limits";
 import { bootstrapPrompt } from "./prompts";
 import type { TurnStatus } from "./store";
 import { TextJournal } from "./text-journal";
+import { executionContext, type ToolExchange } from "./turn-context";
 import { ToolSession } from "./tool-session";
 export class AgentOrchestrator {
   constructor(
@@ -36,7 +37,7 @@ export class AgentOrchestrator {
       input.signal,
       AbortSignal.timeout(this.limits.durationMs),
     ]);
-    const messages = [...input.history];
+    const exchanges: ToolExchange[] = [];
     const system = bootstrapPrompt(input.workspaceId, input.conversationId);
     const historyCharacters = JSON.stringify(input.history).length;
     const tools = bootstrapTools(this.executor);
@@ -58,7 +59,13 @@ export class AgentOrchestrator {
       const toolsCharacters = await toolDefinitionCharacters(tools);
       for (; step < this.limits.steps; step++) {
         signal.throwIfAborted();
-        if (JSON.stringify(messages).length > this.limits.contextChars)
+        const context = executionContext(
+          input.history,
+          exchanges,
+          session.working,
+          (id) => this.executor.registry.schemaVersion(id),
+        );
+        if (JSON.stringify(context.messages).length > this.limits.contextChars)
           throw new LimitError(
             "The context limit was reached. Completed changes are saved. Start a new request to continue.",
           );
@@ -81,12 +88,12 @@ export class AgentOrchestrator {
           cachedInputTokens: null,
           cumulativeInputTokens: tokensIn,
           cumulativeOutputTokens: tokensOut,
+          compaction: context.compaction,
           contextCharacters: {
             system: system.length,
             history: historyCharacters,
             tools: toolsCharacters,
-            exchanges:
-              JSON.stringify(messages.slice(input.history.length)).length - 2,
+            exchanges: context.compaction.rawExchangeCharacters,
           },
         };
         try {
@@ -94,7 +101,7 @@ export class AgentOrchestrator {
             model: input.model,
             apiKey: input.apiKey,
             system,
-            messages,
+            messages: context.messages,
             tools,
             signal,
             maxOutputTokens: Math.max(1, this.limits.outputTokens - tokensOut),
@@ -158,11 +165,15 @@ export class AgentOrchestrator {
             input: call.args,
             providerOptions: call.providerOptions,
           });
-        messages.push({ role: "assistant", content: assistant });
+        const exchange: ToolExchange = {
+          messages: [{ role: "assistant", content: assistant }],
+          calls: [],
+        };
         for (const call of pending) {
           signal.throwIfAborted();
           calls++;
-          messages.push(
+          exchange.calls.push(calls);
+          exchange.messages.push(
             await session.execute(
               call,
               {
@@ -175,6 +186,7 @@ export class AgentOrchestrator {
             ),
           );
         }
+        exchanges.push(exchange);
       }
       if (step === this.limits.steps)
         throw new LimitError(

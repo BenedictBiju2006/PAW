@@ -6,6 +6,8 @@ import { FailureTracker } from "./failure-tracker";
 import type { ExecutionTools, ToolResult } from "../../tooling/public";
 import { redact, type AgentEvent } from "../model/events";
 import { decodeInvocation } from "./bootstrap-tools";
+import { TurnWorkingState } from "./working-state";
+import { compactSchema } from "../../tooling/server/public";
 import { TurnKnowledge } from "../../tooling/server/public";
 import type { Store } from "./contracts";
 import { agentLimits, LimitError } from "./limits";
@@ -18,6 +20,7 @@ const fail = (code: string, message: string) => ({
   },
 });
 export class ToolSession {
+  readonly working = new TurnWorkingState();
   private knowledge: TurnKnowledge;
   private failures = new FailureTracker();
   private repetitions = new Map<
@@ -110,10 +113,11 @@ export class ToolSession {
         "repeated_operation",
         "This operation has repeated three times. Inspect a different resource or explain the blocker.",
       );
+    const previousMutation = this.completedMutations.get(signature);
     if (!result) {
       result = await this.executor.execute(toolId, args, {
         schemaVersion: this.knowledge.version(toolId)!,
-        previousResult: this.completedMutations.get(signature),
+        previousResult: previousMutation,
       });
       if (result.ok && definition?.sideEffects === "write")
         this.completedMutations.set(signature, result);
@@ -187,6 +191,28 @@ export class ToolSession {
         if (attempt.failed && this.failures.recovered.includes(attempt.toolId))
           this.repetitions.delete(key);
     }
+    this.working.record({
+      call: input.callIndex,
+      invocationId,
+      tool: toolId,
+      args: safeArgs,
+      result: actual.ok ? (redact(result) as ToolResult) : safeResult,
+      ...(!safeResult.ok && actual.ok
+        ? { deliveryError: safeResult.error }
+        : {}),
+      mutation:
+        actual.ok &&
+        definition?.sideEffects !== "none" &&
+        result !== previousMutation,
+      reused: result === previousMutation,
+      recovered: safeResult.ok ? this.failures.recovered : [],
+      schemas: receipts
+        .filter((receipt) => accepted.includes(receipt.id))
+        .map((receipt) => ({
+          ...receipt,
+          inputSchema: compactSchema(receipt.inputSchema),
+        })),
+    });
     emit({
       type: "activity",
       activity: {

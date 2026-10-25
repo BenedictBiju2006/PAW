@@ -1169,6 +1169,38 @@ test(
           (await admin.rpc("record_model_request", requestArgs)).error,
           null,
         );
+        const compactionArgs = {
+          ...requestArgs,
+          raw_exchange_chars: 100,
+          sent_exchange_chars: 50,
+          exchanges_compacted: 1,
+          characters_saved: 50,
+        };
+        assert.equal(
+          (await admin.rpc("record_model_request_compaction", compactionArgs))
+            .error,
+          null,
+        );
+        assert.ok(
+          (await db.rpc("record_model_request_compaction", compactionArgs))
+            .error,
+        );
+        assert.ok(
+          (
+            await admin.rpc("record_model_request_compaction", {
+              ...compactionArgs,
+              actor: b,
+            })
+          ).error,
+        );
+        assert.ok(
+          (
+            await admin.rpc("record_model_request_compaction", {
+              ...compactionArgs,
+              characters_saved: 51,
+            })
+          ).error,
+        );
         const initialDiagnostic = (
           await db
             .from("agent_turns")
@@ -2830,6 +2862,18 @@ test(
       0,
     );
     assert.equal(turn.request_diagnostics.length, 4);
+    assert.ok(
+      turn.request_diagnostics.every(
+        (row: any) =>
+          row.compaction.rawExchangeCharacters ===
+            row.contextCharacters.exchanges &&
+          row.compaction.sentExchangeCharacters <=
+            row.compaction.rawExchangeCharacters &&
+          row.compaction.charactersSaved ===
+            row.compaction.rawExchangeCharacters -
+              row.compaction.sentExchangeCharacters,
+      ),
+    );
     console.log(
       "Synthetic discovery regression (not live token measurements):",
       JSON.stringify({

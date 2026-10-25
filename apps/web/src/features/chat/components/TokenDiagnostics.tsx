@@ -34,6 +34,9 @@ export function RequestDiagnosticsTable({
             <th>History chars</th>
             <th>Tool definition chars</th>
             <th>Accumulated exchange chars</th>
+            <th>Sent exchange chars</th>
+            <th>Exchanges compacted</th>
+            <th>Chars saved</th>
           </tr>
         </thead>
         <tbody>
@@ -52,7 +55,20 @@ export function RequestDiagnosticsTable({
               <td>{count(row.contextCharacters.system)}</td>
               <td>{count(row.contextCharacters.history)}</td>
               <td>{count(row.contextCharacters.tools)}</td>
-              <td>{count(row.contextCharacters.exchanges)}</td>
+              <td>
+                {count(
+                  row.compaction?.rawExchangeCharacters ??
+                    row.contextCharacters.exchanges,
+                )}
+              </td>
+              <td>
+                {count(
+                  row.compaction?.sentExchangeCharacters ??
+                    row.contextCharacters.exchanges,
+                )}
+              </td>
+              <td>{count(row.compaction?.exchangesCompacted)}</td>
+              <td>{count(row.compaction?.charactersSaved)}</td>
             </tr>
           ))}
         </tbody>
@@ -104,9 +120,10 @@ export function TokenDiagnostics({
       <p className="muted">
         Tokens are reported by the provider. Character counts measure serialized
         PAW context, not tokens or the exact provider request. History is the
-        context prepared at turn start; exchanges accumulate during the turn.
-        Unknown usage is not zero. Cached counts may be unavailable on some
-        requests.
+        context prepared at turn start. Accumulated exchanges measure original
+        history; sent exchanges include compact receipts and working state.
+        Savings are approximate characters, not tokens. Unknown usage is not
+        zero. Cached counts may be unavailable on some requests.
       </p>
       <label>
         Conversation

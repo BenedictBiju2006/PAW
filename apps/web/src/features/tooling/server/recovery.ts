@@ -75,10 +75,11 @@ export function compactSchema(input: unknown): Record<string, unknown> {
       if (Object.keys(properties).length > 16) result.truncated = true;
     }
     if (schema.items) result.items = visit(schema.items, depth + 1);
-    if (Array.isArray(schema.anyOf))
-      result.anyOf = schema.anyOf
-        .slice(0, 4)
-        .map((child) => visit(child, depth + 1));
+    for (const key of ["anyOf", "allOf", "oneOf"])
+      if (Array.isArray(schema[key]))
+        result[key] = schema[key]
+          .slice(0, 4)
+          .map((child: unknown) => visit(child, depth + 1));
     return result;
   }
   const summary = visit(input, 0);
