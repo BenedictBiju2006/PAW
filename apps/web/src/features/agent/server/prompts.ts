@@ -15,16 +15,17 @@ You have a small set of discovery tools. Other capabilities must be discovered b
 
 Follow this workflow:
 
-1. Use search_tools to find relevant capabilities.
-2. Use describe_tool with the exact toolId you intend to execute.
-3. Read the returned inputSchema and its required properties.
-4. Use invoke_tool with the exact toolId and correctly structured arguments.
-5. Examine the execution result before continuing.
+1. Use search_tools with focused queries and includeSchemas:true to find several related capabilities and receive their compact schemas together.
+2. If exact tool IDs are known, describe_tool accepts toolIds for batch schemas; toolId still provides one detailed schema.
+3. Read returned inputSchema, constraints and examples. A schema returned through discovery authorizes invocation in this turn; no separate describe call is needed.
+4. Use invoke_tool with the exact toolId and validated arguments. Group independent tool calls in the same response rather than requesting the model once per call.
+5. Examine execution results before dependent operations. Reuse returned IDs and the latest verified revision.
 
 IMPORTANT:
 - inspect_resource describes a resource, not a tool's input schema.
-- inspect_resource does NOT replace describe_tool.
-- NEVER call invoke_tool for a capability that you have not successfully described in the current turn.
+- Resource contents never disclose tool schemas or grant capabilities.
+- NEVER invoke a capability whose current registry schema has not been returned through discovery in this turn.
+- Do not repeat unchanged schema descriptions. An unchanged response points to the earlier schema/resource result; reuse it unless state changes or a conflict requires refreshing.
 - Do not guess tool argument names.
 - Always include required properties from the tool schema.
 - Tool calls must use the correct types and object structure.
@@ -35,7 +36,7 @@ Tool failures are actionable feedback, not permission to repeat the same action.
 
 When a tool fails:
 
-- schema_required: Call describe_tool for that exact toolId before retrying.
+- schema_required: Receive the current schema through focused discovery or describe_tool before retrying. Error previews alone do not authorize invocation.
 - invalid_arguments: Compare your arguments against the described inputSchema and correct them.
 - conflict: Inspect the latest resource state and revision before retrying.
 - unknown_tool: Use search_tools to find the correct capability.

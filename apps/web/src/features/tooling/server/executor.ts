@@ -3,8 +3,12 @@ import { z } from "zod";
 import { ServiceError } from "../../../shared/db/result";
 import { ToolGuidanceError, compactSchema } from "./recovery";
 import type { ToolRegistry } from "./registry";
-import type { ToolContext, ToolResult } from "./types";
+import type { ToolContext, ToolResult, SchemaDisclosure } from "./types";
 export class ToolExecutor<Services = unknown> {
+  private receipts = new WeakMap<ToolResult, SchemaDisclosure[]>();
+  disclosures(result: ToolResult) {
+    return this.receipts.get(result) ?? [];
+  }
   constructor(
     readonly registry: ToolRegistry<Services>,
     private context: ToolContext<Services>,
@@ -60,9 +64,9 @@ export class ToolExecutor<Services = unknown> {
       error: {
         code: "schema_required",
         message:
-          "This tool has not been described in this turn; it was not executed.",
+          "This tool schema has not been disclosed in this turn or has changed; it was not executed.",
         guidance:
-          "Call describe_tool with the supplied arguments, then invoke the tool using that schema.",
+          "Receive its schema through discovery, then invoke it using the current schema.",
         nextAction: { tool: "describe_tool", arguments: { toolId: id } },
         inputSchema: compactSchema(
           z.toJSONSchema(tool.inputSchema, { io: "input" }),
@@ -70,7 +74,11 @@ export class ToolExecutor<Services = unknown> {
       },
     };
   }
-  async execute(id: string, input: unknown): Promise<ToolResult> {
+  async execute(
+    id: string,
+    input: unknown,
+    disclosure?: { schemaVersion: string; previousResult?: ToolResult },
+  ): Promise<ToolResult> {
     try {
       const tool = this.registry.resolve(id);
       if (!tool)
@@ -87,6 +95,11 @@ export class ToolExecutor<Services = unknown> {
           "This execution context does not grant the required permissions.",
           "Ask the application host for authorized access.",
         );
+      if (
+        disclosure &&
+        disclosure.schemaVersion !== this.registry.schemaVersion(id)
+      )
+        return this.schemaRecovery(id, input as Record<string, unknown>);
       const args = tool.inputSchema.parse(input);
       const denied = await this.registry.authorize?.(args, id, this.context);
       if (denied) return denied;
@@ -99,10 +112,33 @@ export class ToolExecutor<Services = unknown> {
           "Explicit user confirmation is required for this exact operation.",
           "Ask the user to use the manual delete control. A model-supplied Boolean cannot grant approval.",
         );
-      return {
+      // Recheck after asynchronous authorization/confirmation; a stale receipt
+      // cannot authorize a changed schema or permission contract.
+      if (
+        disclosure &&
+        disclosure.schemaVersion !== this.registry.schemaVersion(id)
+      )
+        return this.schemaRecovery(id, args);
+      if (disclosure?.previousResult) return disclosure.previousResult;
+      const result: ToolResult = {
         ok: true,
         data: (await tool.handler(args, this.context)) ?? null,
       };
+      if (tool.policy.disclosure) {
+        const disclosures = this.registry.confirmDisclosures(result.data);
+        const allowed = await Promise.all(
+          disclosures.map(async (receipt) =>
+            (await this.discoveryAccess(receipt.id)) ? null : receipt,
+          ),
+        );
+        this.receipts.set(
+          result,
+          allowed.filter(
+            (receipt): receipt is SchemaDisclosure => receipt !== null,
+          ),
+        );
+      }
+      return result;
     } catch (error) {
       if (error instanceof ToolGuidanceError)
         return { ok: false, error: error.feedback };

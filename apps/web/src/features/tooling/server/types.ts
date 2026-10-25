@@ -22,8 +22,25 @@ export type ToolMetadata = {
   sideEffects: "none" | "write" | "destructive";
   result: string;
 };
+/** Server-owned execution policy. It is never inferred from model/tool data. */
+export type ToolPolicy = {
+  bootstrap?: boolean;
+  disclosure?: boolean;
+  reuse?: "schema" | "resource";
+  failureGroup?: string;
+  failureArgument?: string;
+  clearsGroups?: string[];
+  clearsErrorCodes?: string[];
+  examples?: Record<string, unknown>[];
+};
+export type SchemaDisclosure = {
+  id: string;
+  version: string;
+  inputSchema: unknown;
+};
 export type ToolDefinition<Services = unknown> = ToolMetadata & {
   inputSchema: z.ZodObject;
+  policy: ToolPolicy;
   handler: (
     args: Record<string, unknown>,
     context: ToolContext<Services>,

@@ -570,7 +570,7 @@ test("temporary discovery authorization-check failures remain retryable and reve
   assert.ok(!recovered.ok && recovered.error.code === "schema_required");
 });
 
-test("meaningful inspection clears failed identical-call counts without disabling successful-read repetition bounds", async () => {
+test("meaningful inspection clears failed counts and unchanged reads return a reuse reference", async () => {
   const s = fixture();
   for (let index = 0; index < 5; index++)
     await s.call("inspect_resource", { uri: `${base}/collection/guess` });
@@ -590,9 +590,9 @@ test("meaningful inspection clears failed identical-call counts without disablin
       true,
     );
   assert.equal(
-    (await fresh.call("inspect_resource", { uri: `${base}/interface` })).error
-      .code,
-    "repeated_operation",
+    (await fresh.call("inspect_resource", { uri: `${base}/interface` })).data
+      .unchanged,
+    true,
   );
 });
 

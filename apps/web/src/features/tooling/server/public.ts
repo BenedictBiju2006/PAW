@@ -5,3 +5,5 @@ export { registrar } from "./register";
 export { ToolRegistry } from "./registry";
 
 export { ToolGuidanceError } from "./recovery";
+
+export { TurnKnowledge } from "./turn-knowledge";

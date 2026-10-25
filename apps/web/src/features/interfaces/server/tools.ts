@@ -58,6 +58,8 @@ export function registerInterfacesTools<
       }
       return searchUiComponents(a.query, a.limit);
     },
+    "read",
+    { examples: [{ query: "heading table form chart" }] },
   );
   add(
     "add_ui_components",
@@ -79,6 +81,21 @@ export function registerInterfacesTools<
     "{surfaceId, components:[{key?,id,component}], revision}; executor ok/error confirms atomic success/failure. No complete interface or collection records returned.",
     async (a, c) => c.service.addUiComponents(a),
     "write",
+    {
+      examples: [
+        {
+          workspaceId: "11111111-1111-4111-8111-111111111111",
+          revision: 1,
+          components: [
+            {
+              key: "heading",
+              component: "Text",
+              properties: { text: "Movies", variant: "h2" },
+            },
+          ],
+        },
+      ],
+    },
   );
   add(
     "update_ui_component",
@@ -118,6 +135,8 @@ export function registerInterfacesTools<
         "x-paw-authoring": authoring,
       };
     },
+    "read",
+    { examples: [{ component: "DataTable" }] },
   );
   add(
     "inspect_interface",

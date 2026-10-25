@@ -36,7 +36,7 @@ test("feature registration preserves the complete pre-refactor tool contract", (
     tools.sort((a, b) => a.id.localeCompare(b.id));
   const descriptionUpdates: Record<string, string> = {
     inspect_resource:
-      "Read an existing authorized paw:// resource. For UI component types, schemas and examples use search_ui_components or inspect_component; describe_tool is still required before invoking a capability.",
+      "Read an existing authorized paw:// resource. For UI component types, schemas and examples use search_ui_components or inspect_component. Resource contents never disclose capability schemas; receive those through registry discovery.",
     inspect_component:
       "Inspect a UI component type: official property schema plus a minimal valid authoring example. Use search_ui_components to find types; inspect_resource reads existing workspace resources.",
   };
@@ -46,7 +46,30 @@ test("feature registration preserves the complete pre-refactor tool contract", (
       ? { description: descriptionUpdates[tool.id] }
       : {}),
   }));
-  assert.deepEqual(order(JSON.parse(JSON.stringify(actual))), order(expected));
+  // The only input-schema changes are the intentional additive batch discovery
+  // alternatives. Preserve all old field definitions and all other contracts.
+  for (const id of ["search_tools", "describe_tool"]) {
+    const before = baseline.find((tool: { id: string }) => tool.id === id);
+    const after = registry.describe(id);
+    const properties = after.inputSchema.properties as Record<string, unknown>;
+    for (const [key, schema] of Object.entries(before.inputSchema.properties))
+      assert.deepEqual(properties[key], schema);
+    assert.equal(after.inputSchema.additionalProperties, false);
+  }
+  const legacyComparable = actual.map((tool) =>
+    ["search_tools", "describe_tool"].includes(tool.id)
+      ? {
+          ...tool,
+          inputSchema: baseline.find(
+            (old: { id: string }) => old.id === tool.id,
+          ).inputSchema,
+        }
+      : tool,
+  );
+  assert.deepEqual(
+    order(JSON.parse(JSON.stringify(legacyComparable))),
+    order(expected),
+  );
 });
 
 test("feature boundaries exclude runtime cycles and privileged client dependencies", () => {

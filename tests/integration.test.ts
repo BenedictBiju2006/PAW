@@ -2640,3 +2640,219 @@ test(
       assert.deepEqual(inaccessible.error, nonexistent.error);
   },
 );
+
+test(
+  "batch-disclosed schemas complete the synthetic movie-authoring workflow in four model requests",
+  { skip: !enabled },
+  async () => {
+    const { randomUUID } = await import("node:crypto");
+    const { createToolRegistry } =
+      await import("../apps/web/src/composition/tools");
+    const { ToolExecutor } =
+      await import("../apps/web/src/features/tooling/server/executor");
+    const { AgentOrchestrator } =
+      await import("../apps/web/src/features/agent/server/orchestrator");
+    const { AgentStore } =
+      await import("../apps/web/src/features/agent/server/store");
+    const { ConversationService } =
+      await import("../apps/web/src/features/chat/server/services");
+    const db = client(a),
+      admin = client(undefined, "service_role");
+    const service = createWorkspaceServices(db, a);
+    const workspace = await service.create("Efficient movie discovery fixture");
+    const collection = await service.createCollection(workspace.id, {
+      name: "Movies",
+      fields: [
+        { key: "title", label: "Title", type: "string", required: true },
+        { key: "rating", label: "Rating", type: "number", required: true },
+      ],
+    });
+    await service.writeRecord(workspace.id, collection.id, {
+      title: "Arrival",
+      rating: 5,
+    });
+    const recordsBefore = await service.records(workspace.id, collection.id);
+    const conversation = await new ConversationService(db, service).create(
+      workspace.id,
+      "Movie benchmark fixture",
+    );
+    const turnId = randomUUID();
+    const store = new AgentStore(admin, a);
+    await store.start({
+      id: turnId,
+      workspaceId: workspace.id,
+      conversationId: conversation.id,
+      text: "Create a movie ranking heading, editable table, entry form and rating chart with the existing Movies collection.",
+      provider: "scripted-efficiency",
+      model: "fixture",
+    });
+    const executor = new ToolExecutor(createToolRegistry(), {
+      service,
+      workspaceId: workspace.id,
+      permissions: new Set(["read", "write"]),
+    });
+    let requests = 0;
+    const observed: any[] = [];
+    const result = (messages: any[], id: string) =>
+      messages
+        .filter((m) => m.role === "tool")
+        .flatMap((m) => m.content)
+        .find((part) => part.toolCallId === id)?.output.value;
+    const provider: import("../apps/web/src/features/providers/public").ModelProvider =
+      {
+        id: "scripted-efficiency",
+        capabilities: { streaming: true, tools: true, hostedMcp: false },
+        async *stream(request) {
+          const step = requests++;
+          const invoke = (id: string, toolId: string, args: unknown) => ({
+            type: "call" as const,
+            id,
+            name: "invoke_tool",
+            args: { toolId, arguments: args },
+          });
+          if (step === 0)
+            yield {
+              type: "call",
+              id: "batch-discovery",
+              name: "search_tools",
+              args: {
+                queries: [
+                  "add_ui_components",
+                  "search_ui_components",
+                  "inspect_interface",
+                  "query_records",
+                ],
+                includeSchemas: true,
+                limit: 4,
+              },
+            };
+          else if (step === 1) {
+            const schemas = result(request.messages, "batch-discovery");
+            assert.equal(schemas.ok, true);
+            assert.deepEqual(
+              schemas.data.tools.map((tool: any) => tool.id).sort(),
+              [
+                "add_ui_components",
+                "search_ui_components",
+                "inspect_interface",
+                "query_records",
+              ].sort(),
+            );
+            yield invoke("component-types", "search_ui_components", {
+              query: "movies heading table form chart",
+            });
+            yield invoke("current-interface", "inspect_interface", {
+              workspaceId: workspace.id,
+            });
+            yield invoke("current-records", "query_records", {
+              workspaceId: workspace.id,
+              collectionId: collection.id,
+            });
+          } else if (step === 2) {
+            assert.equal(
+              result(request.messages, "current-records").data.total,
+              1,
+            );
+            const revision = result(request.messages, "current-interface").data
+              .revision;
+            yield invoke("author-once", "add_ui_components", {
+              workspaceId: workspace.id,
+              revision,
+              components: [
+                {
+                  key: "heading",
+                  component: "Text",
+                  properties: { text: "Movie ranking", variant: "h2" },
+                },
+                {
+                  key: "table",
+                  component: "DataTable",
+                  properties: { collectionId: collection.id },
+                },
+                {
+                  key: "form",
+                  component: "CollectionForm",
+                  properties: { collectionId: collection.id },
+                },
+                {
+                  key: "chart",
+                  component: "CollectionChart",
+                  properties: { collectionId: collection.id, field: "rating" },
+                },
+              ],
+            });
+          } else {
+            assert.equal(result(request.messages, "author-once").ok, true);
+            yield {
+              type: "text",
+              text: "The confirmed movie-ranking interface is ready; the existing records are preserved.",
+            };
+          }
+          // Synthetic accounting fixture only, never a claim about a live model.
+          yield {
+            type: "usage",
+            input: 10,
+            output: 5,
+            cachedInput: 0,
+            reason: "stop",
+          };
+        },
+      };
+    await new AgentOrchestrator(provider, executor, store).run(
+      {
+        turnId,
+        workspaceId: workspace.id,
+        conversationId: conversation.id,
+        model: "fixture",
+        apiKey: "no-live-inference",
+        history: [
+          {
+            role: "user",
+            content: `Use Movies collection ${collection.id} to build a movie-ranking interface.`,
+          },
+        ],
+        signal: new AbortController().signal,
+      },
+      (event) => observed.push(event),
+    );
+    const turn = (
+      await db.from("agent_turns").select("*").eq("id", turnId).single()
+    ).data!;
+    assert.equal(turn.status, "completed");
+    assert.equal(requests, 4);
+    assert.equal(turn.model_requests, 4);
+    assert.equal(turn.tool_calls, 5);
+    assert.equal(
+      observed.filter(
+        (event) =>
+          event.type === "activity" && event.activity.status === "failed",
+      ).length,
+      0,
+    );
+    assert.equal(turn.request_diagnostics.length, 4);
+    console.log(
+      "Synthetic discovery regression (not live token measurements):",
+      JSON.stringify({
+        modelRequests: turn.model_requests,
+        toolCalls: turn.tool_calls,
+        failures: observed.filter(
+          (event) =>
+            event.type === "activity" && event.activity.status === "failed",
+        ).length,
+        contextCharacters: turn.request_diagnostics.map(
+          (row: any) => row.contextCharacters,
+        ),
+      }),
+    );
+    assert.ok(
+      turn.request_diagnostics.at(-1).contextCharacters.exchanges >
+        turn.request_diagnostics[0].contextCharacters.exchanges,
+    );
+    assert.equal((await service.workspace(workspace.id)).revision, 2);
+    assert.equal((await service.inspect(workspace.id))[0].components.length, 5);
+    assert.deepEqual(
+      await service.records(workspace.id, collection.id),
+      recordsBefore,
+    );
+  },
+);

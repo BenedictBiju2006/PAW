@@ -27,15 +27,8 @@ export function createMcpAdapter<Services>(
   );
   // Only bootstrap schemas are loaded initially. describe_tool loads other schemas
   // on demand; tools/call can invoke any registry tool through the same executor.
-  const bootstrap = [
-    "search_tools",
-    "describe_tool",
-    "list_resources",
-    "inspect_resource",
-  ];
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: bootstrap.map((id) => {
-      const t = registry.resolve(id)!;
+    tools: registry.bootstrap().map((t) => {
       return {
         name: t.id,
         description: t.description,

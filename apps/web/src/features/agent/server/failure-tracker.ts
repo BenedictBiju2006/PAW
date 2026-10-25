@@ -1,32 +1,43 @@
 import "server-only";
-import type { ToolResult } from "../../tooling/public";
+import type { ToolResult, ToolPolicy } from "../../tooling/public";
 type Failure = Extract<ToolResult, { ok: false }>;
-type State = { tool: string; count: number; error: Failure["error"] };
+type State = {
+  tool: string;
+  count: number;
+  error: Failure["error"];
+  group?: string;
+};
 /** Turn-local feedback only. Conflicts, temporary errors and confirmations are
  * deliberately excluded; corrected schema-valid arguments are always attempted. */
 export class FailureTracker {
   private failures = new Map<string, State>();
+  recovered: string[] = [];
   before(
     tool: string,
     args: Record<string, unknown>,
     schemaValid: boolean,
+    policy: ToolPolicy = {},
   ): Failure | undefined {
     for (const state of this.failures.values()) {
       if (state.tool !== tool || state.count < 2) continue;
       const code = state.error.code;
       let equivalent =
         ["invalid_arguments", "unknown_tool"].includes(code) && !schemaValid;
-      if (tool === "inspect_resource" && code === "resource_invalid")
+      if (policy.failureArgument && code === "resource_invalid")
         equivalent =
-          typeof args.uri !== "string" ||
+          typeof args[policy.failureArgument!] !== "string" ||
           !state.error.validUriPattern ||
-          !new RegExp(state.error.validUriPattern).test(args.uri);
-      if (tool === "inspect_resource" && code === "not_found")
+          !new RegExp(state.error.validUriPattern).test(
+            args[policy.failureArgument!] as string,
+          );
+      if (policy.failureArgument && code === "not_found")
         equivalent =
-          typeof args.uri === "string" &&
+          typeof args[policy.failureArgument!] === "string" &&
           (state.error.uriPatterns
             ?.filter((pattern) => pattern.includes("{"))
-            .some((pattern) => matchesPattern(pattern, args.uri as string)) ??
+            .some((pattern) =>
+              matchesPattern(pattern, args[policy.failureArgument!] as string),
+            ) ??
             true);
       if (equivalent)
         return {
@@ -45,24 +56,27 @@ export class FailureTracker {
     tool: string,
     args: Record<string, unknown>,
     result: ToolResult,
+    policy: ToolPolicy = {},
+    disclosures: string[] = [],
   ): ToolResult {
+    this.recovered = [];
     if (result.ok) {
-      this.clear(tool);
-      if (tool === "describe_tool" && typeof args.toolId === "string")
-        this.clear(args.toolId);
-      if (tool === "list_resources") this.clear("inspect_resource");
-      if (tool === "search_tools") {
-        for (const [key, state] of this.failures)
-          if (["unknown_tool", "forbidden"].includes(state.error.code))
-            this.failures.delete(key);
+      const recovered = new Set([tool, ...disclosures]);
+      for (const [key, state] of this.failures) {
+        const action = state.error.nextAction;
+        if (
+          state.tool === tool ||
+          disclosures.includes(state.tool) ||
+          (state.group && policy.clearsGroups?.includes(state.group)) ||
+          policy.clearsErrorCodes?.includes(state.error.code) ||
+          action?.tool === tool ||
+          action?.arguments.toolId === tool
+        ) {
+          recovered.add(state.tool);
+          this.failures.delete(key);
+        }
       }
-      if (tool === "search_ui_components") {
-        for (const [key, state] of this.failures)
-          if (
-            state.error.nextAction?.arguments.toolId === "search_ui_components"
-          )
-            this.failures.delete(key);
-      }
+      this.recovered = [...recovered];
       return result;
     }
     const code = result.error.code;
@@ -74,7 +88,7 @@ export class FailureTracker {
         "unknown_tool",
         "forbidden",
       ].includes(code) &&
-      !(tool === "inspect_resource" && code === "not_found")
+      !(policy.failureArgument && code === "not_found")
     )
       return result;
     const key = `${tool}:${code}`;
@@ -85,7 +99,7 @@ export class FailureTracker {
         ? { tool: "search_tools", arguments: { query: "" } }
         : { tool: "describe_tool", arguments: { toolId: tool } });
     const error = { ...result.error, nextAction };
-    this.failures.set(key, { tool, count, error });
+    this.failures.set(key, { tool, count, error, group: policy.failureGroup });
     return count < 2
       ? { ok: false, error }
       : {
@@ -95,10 +109,6 @@ export class FailureTracker {
             guidance: `Two related ${code} failures. Perform nextAction instead of varying guesses. ${error.guidance}`,
           },
         };
-  }
-  private clear(tool: string) {
-    for (const [key, state] of this.failures)
-      if (state.tool === tool) this.failures.delete(key);
   }
 }
 

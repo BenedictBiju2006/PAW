@@ -1,7 +1,12 @@
 import "server-only";
 import { z } from "zod";
 import type { ToolRegistry } from "./registry";
-import type { Permission, ToolContext, ToolMetadata } from "./types";
+import type {
+  Permission,
+  ToolContext,
+  ToolMetadata,
+  ToolPolicy,
+} from "./types";
 export function registrar<Services>(registry: ToolRegistry<Services>) {
   function add<S extends z.ZodObject>(
     id: string,
@@ -15,6 +20,7 @@ export function registrar<Services>(registry: ToolRegistry<Services>) {
       context: ToolContext<Services>,
     ) => Promise<unknown>,
     permission: Permission = "read",
+    policy: ToolPolicy = {},
   ) {
     const metadata: ToolMetadata = {
       id,
@@ -31,7 +37,10 @@ export function registrar<Services>(registry: ToolRegistry<Services>) {
             ? "destructive"
             : "write",
     };
-    registry.register(metadata, schema, handler);
+    registry.register(metadata, schema, handler, {
+      reuse: permission === "read" ? "resource" : undefined,
+      ...policy,
+    });
   }
   return add;
 }

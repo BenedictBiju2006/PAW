@@ -5,7 +5,8 @@ import type { ProviderEvent } from "../../providers/public";
 import { FailureTracker } from "./failure-tracker";
 import type { ExecutionTools, ToolResult } from "../../tooling/public";
 import { redact, type AgentEvent } from "../model/events";
-import { dispatch } from "./bootstrap-tools";
+import { decodeInvocation } from "./bootstrap-tools";
+import { TurnKnowledge } from "../../tooling/server/public";
 import type { Store } from "./contracts";
 import { agentLimits, LimitError } from "./limits";
 const fail = (code: string, message: string) => ({
@@ -17,7 +18,7 @@ const fail = (code: string, message: string) => ({
   },
 });
 export class ToolSession {
-  private described = new Set<string>();
+  private knowledge: TurnKnowledge;
   private failures = new FailureTracker();
   private repetitions = new Map<
     string,
@@ -28,7 +29,9 @@ export class ToolSession {
     private executor: ExecutionTools,
     private store: Store,
     private limits: ReturnType<typeof agentLimits>,
-  ) {}
+  ) {
+    this.knowledge = new TurnKnowledge(executor);
+  }
   async execute(
     call: Extract<ProviderEvent, { type: "call" }>,
     input: { turnId: string; workspaceId: string; callIndex: number },
@@ -36,27 +39,10 @@ export class ToolSession {
     emit: (e: AgentEvent) => void,
   ): Promise<ModelMessage> {
     const invocationId = `${input.turnId}:${input.callIndex}`;
-    let toolId = call.name,
-      args: Record<string, unknown> = {},
-      result: ToolResult | undefined;
-    if (call.name === "invoke_tool") {
-      const parsed = dispatch.safeParse(call.args);
-      if (!parsed.success)
-        result = fail(
-          "invalid_arguments",
-          "invoke_tool requires a toolId and arguments object.",
-        );
-      else {
-        toolId = parsed.data.toolId;
-        args = parsed.data.arguments;
-      }
-    } else if (
-      call.args &&
-      typeof call.args === "object" &&
-      !Array.isArray(call.args)
-    )
-      args = call.args as Record<string, unknown>;
-    else result = fail("invalid_arguments", "Expected an arguments object.");
+    const decoded = decodeInvocation(call);
+    const toolId = decoded.ok ? decoded.toolId : call.name;
+    const args = decoded.ok ? decoded.args : {};
+    let result: ToolResult | undefined = decoded.ok ? undefined : decoded;
     if (JSON.stringify(args).length > 250000)
       result = fail(
         "input_too_large",
@@ -101,38 +87,34 @@ export class ToolSession {
         status: "running",
       },
     });
+    const definition = this.executor.registry.resolve(toolId);
+    const argumentCheck = definition?.inputSchema.safeParse(args);
     const signature = createHash("sha256")
-      .update(toolId + canonical(args))
+      .update(
+        toolId + canonical(argumentCheck?.success ? argumentCheck.data : args),
+      )
       .digest("hex");
     const repeated = (this.repetitions.get(signature)?.count ?? 0) + 1;
     this.repetitions.set(signature, { toolId, count: repeated });
-    const definition = this.executor.registry.resolve(toolId);
     if (!result)
       result = this.failures.before(
         toolId,
         args,
-        definition?.inputSchema.safeParse(args).success ?? false,
+        argumentCheck?.success ?? false,
+        definition?.policy,
       );
-    if (
-      !result &&
-      ![
-        "search_tools",
-        "describe_tool",
-        "list_resources",
-        "inspect_resource",
-      ].includes(toolId) &&
-      !this.described.has(toolId)
-    )
+    if (!result && !this.knowledge.version(toolId))
       result = await this.executor.schemaRecovery(toolId, args);
-    if (!result && repeated > 3)
+    if (!result && repeated > 3 && !definition?.policy.reuse)
       result = fail(
         "repeated_operation",
         "This operation has repeated three times. Inspect a different resource or explain the blocker.",
       );
-    if (!result && this.completedMutations.has(signature))
-      result = this.completedMutations.get(signature)!;
-    else if (!result) {
-      result = await this.executor.execute(toolId, args);
+    if (!result) {
+      result = await this.executor.execute(toolId, args, {
+        schemaVersion: this.knowledge.version(toolId)!,
+        previousResult: this.completedMutations.get(signature),
+      });
       if (result.ok && definition?.sideEffects === "write")
         this.completedMutations.set(signature, result);
     }
@@ -144,7 +126,15 @@ export class ToolSession {
       )
     )
       this.repetitions.delete(signature);
-    const serialized = JSON.stringify(redact(result));
+    const receipts = this.executor.disclosures(result);
+    const prepared = this.knowledge.prepare(
+      toolId,
+      args,
+      signature,
+      result,
+      receipts,
+    );
+    const serialized = JSON.stringify(redact(prepared));
     const boundedResult: ToolResult =
       serialized.length > this.limits.resultChars ||
       Buffer.byteLength(serialized) > 60000
@@ -153,7 +143,9 @@ export class ToolSession {
             "Result exceeded the response bound. Narrow the query, lower its limit, or inspect an individual resource/component.",
           )
         : JSON.parse(serialized);
-    let safeResult = this.failures.observe(toolId, args, boundedResult);
+    let safeResult = boundedResult.ok
+      ? boundedResult
+      : this.failures.observe(toolId, args, boundedResult, definition?.policy);
     const finalText = JSON.stringify(safeResult);
     if (
       finalText.length > this.limits.resultChars ||
@@ -163,37 +155,6 @@ export class ToolSession {
         "result_too_large",
         "Recovery feedback exceeded the response bound. Use a focused discovery call.",
       );
-    // A schema was discovered only if its successful result actually reached the
-    // model, not when an oversized/failed description was replaced by an error.
-    if (!safeResult.ok) {
-      const attempt = this.repetitions.get(signature);
-      if (attempt) attempt.failed = true;
-    }
-    if (safeResult.ok) {
-      for (const [key, attempt] of this.repetitions)
-        if (
-          attempt.failed &&
-          (attempt.toolId === toolId ||
-            (toolId === "search_ui_components" &&
-              attempt.toolId === "inspect_resource"))
-        )
-          this.repetitions.delete(key);
-      const recovered =
-        toolId === "describe_tool" && typeof args.toolId === "string"
-          ? args.toolId
-          : toolId === "list_resources"
-            ? "inspect_resource"
-            : undefined;
-      if (toolId === "describe_tool" && recovered)
-        this.described.add(recovered);
-      if (recovered)
-        for (const [key, attempt] of this.repetitions)
-          if (attempt.toolId === recovered) this.repetitions.delete(key);
-      if (toolId === "search_tools")
-        for (const [key, attempt] of this.repetitions)
-          if (!this.executor.registry.resolve(attempt.toolId))
-            this.repetitions.delete(key);
-    }
     await this.store.event(input.turnId, `result:${invocationId}`, "tool", [
       {
         type: "tool_result",
@@ -203,6 +164,29 @@ export class ToolSession {
         isError: !safeResult.ok,
       },
     ]);
+    const accepted = this.knowledge.commit(
+      toolId,
+      signature,
+      result,
+      safeResult,
+      receipts,
+      invocationId,
+    );
+    if (!safeResult.ok) {
+      const attempt = this.repetitions.get(signature);
+      if (attempt) attempt.failed = true;
+    } else {
+      this.failures.observe(
+        toolId,
+        args,
+        safeResult,
+        definition?.policy,
+        accepted,
+      );
+      for (const [key, attempt] of this.repetitions)
+        if (attempt.failed && this.failures.recovered.includes(attempt.toolId))
+          this.repetitions.delete(key);
+    }
     emit({
       type: "activity",
       activity: {

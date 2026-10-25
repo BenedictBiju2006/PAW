@@ -5,4 +5,6 @@ export type {
   ToolDefinition,
   ToolMetadata,
   ToolResult,
+  ToolPolicy,
+  SchemaDisclosure,
 } from "./server/types";

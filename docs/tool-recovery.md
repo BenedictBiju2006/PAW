@@ -10,7 +10,7 @@ An invocation of an undescribed capability still does not execute. Its `schema_r
 - a registry-derived compact `inputSchema` with required arguments, property types, enums, formats, bounds and short patterns;
 - a clear instruction to perform discovery before retrying.
 
-Hints omit descriptions, recursive definitions and large defaults. They are bounded to 4,000 characters, three schema levels and a small property/node budget; `details: "describe_tool"` identifies omitted detail. Input-mode conversion distinguishes required arguments from defaulted optional arguments. Full `describe_tool` validation remains authoritative. Previewing a schema never marks the capability as described. A failed, unauthorized or oversized description does not grant described state either.
+Hints omit descriptions, recursive definitions and large defaults. They are bounded to 4,000 characters, three schema levels and a small property/node budget; `details: "describe_tool"` identifies omitted detail. Input-mode conversion distinguishes required arguments from defaulted optional arguments. Registry validation remains authoritative. As of [Experiment 4](experiment-4-discovery.md), successful compact batch discovery can disclose schemas too. Previewing a schema never marks the capability as described. A failed, unauthorized or oversized description does not grant described state either.
 
 Both `invoke_tool` and unexpected direct domain calls use the same guard. Search results, descriptions and recovery previews respect execution permissions and workspace scope. Destructive capabilities still require the existing trusted confirmation callback before execution.
 
@@ -28,7 +28,7 @@ The turn tracks failures by tool and category, not just identical argument hashe
 
 After two missing-resource guesses in the same URI family, perform the supplied listing/discovery action before guessing more IDs in that family. Switching to a different resource family remains possible. Successful relevant listing, inspection or tool description resets the corresponding tracking. Unrelated successes do not reset resource guessing. New turns start with empty tracking.
 
-Revision conflicts, temporary operation failures and confirmation requests are excluded from pattern blocking and repeated-attempt counters. Only successful writes enter the existing mutation cache; failed writes can genuinely retry. Successful mutation deduplication, call/result journaling, authorization and trusted confirmations remain intact. The original identical-call bound still applies to unchanged non-retryable operations.
+Revision conflicts, temporary operation failures and confirmation requests are excluded from pattern blocking and repeated-attempt counters. Only successful writes enter the existing mutation cache; failed writes can genuinely retry. Successful mutation deduplication, call/result journaling, authorization and trusted confirmations remain intact. Repeated eligible reads/descriptions now return unchanged-result references; other non-retryable operations retain the original identical-call bound.
 
 ## Files and verification
 
