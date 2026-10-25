@@ -77,7 +77,7 @@ export function createToolRegistry() {
   );
   add(
     "inspect_resource",
-    "Inspect an authorized paw:// resource identifier.",
+    "Read an existing authorized paw:// resource. For UI component types, schemas and examples use search_ui_components or inspect_component; describe_tool is still required before invoking a capability.",
     "Progressively learn schemas, properties, relationships and supported operations.",
     ["discovery", "resources", "schema"],
     z.object({ uri: z.string().max(500) }).strict(),

@@ -28,6 +28,8 @@ export function createWorkspaceServices(db: SupabaseClient, actor: string) {
     revision: interfaces.revision.bind(interfaces),
     saveInterface: interfaces.saveInterface.bind(interfaces),
     revisions: interfaces.revisions.bind(interfaces),
+    addUiComponents: interfaces.addUiComponents.bind(interfaces),
+    updateUiComponent: interfaces.updateUiComponent.bind(interfaces),
   };
 }
 export type WorkspaceServices = ReturnType<typeof createWorkspaceServices>;

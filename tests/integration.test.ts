@@ -2259,3 +2259,286 @@ test(
     }
   },
 );
+
+test(
+  "discovery-driven batched movie UI benchmark preserves records, revisions and mutation auditing",
+  { skip: !enabled },
+  async () => {
+    const { randomUUID } = await import("node:crypto");
+    const { createToolRegistry } =
+      await import("../apps/web/src/composition/tools");
+    const { ToolExecutor } =
+      await import("../apps/web/src/features/tooling/server/executor");
+    const { AgentOrchestrator } =
+      await import("../apps/web/src/features/agent/server/orchestrator");
+    const { AgentStore } =
+      await import("../apps/web/src/features/agent/server/store");
+    const { ConversationService } =
+      await import("../apps/web/src/features/chat/server/services");
+    const db = client(a),
+      admin = client(undefined, "service_role");
+    const service = createWorkspaceServices(db, a);
+    const workspace = await service.create("Movie authoring benchmark");
+    const collection = await service.createCollection(workspace.id, {
+      name: "Movies",
+      fields: [
+        { key: "title", label: "Title", type: "string", required: true },
+        { key: "rating", label: "Rating", type: "number", required: true },
+      ],
+    });
+    const record = await service.writeRecord(workspace.id, collection.id, {
+      title: "Arrival",
+      rating: 5,
+    });
+    const originalRecords = await service.records(workspace.id, collection.id);
+    const conversations = new ConversationService(db, service);
+    const conversation = await conversations.create(
+      workspace.id,
+      "Rank movies",
+    );
+    const turnId = randomUUID();
+    const store = new AgentStore(admin, a);
+    await store.start({
+      id: turnId,
+      workspaceId: workspace.id,
+      conversationId: conversation.id,
+      text: "Create a movie-ranking interface",
+      provider: "scripted-benchmark",
+      model: "fixture",
+    });
+    const executor = new ToolExecutor(createToolRegistry(), {
+      service,
+      workspaceId: workspace.id,
+      permissions: new Set(["read", "write"]),
+    });
+    let step = 0;
+    let result: any;
+    const components = [
+      {
+        key: "heading",
+        component: "Text",
+        properties: { text: "Movie ranking", variant: "h2" },
+      },
+      {
+        key: "table",
+        component: "DataTable",
+        properties: { collectionId: collection.id },
+      },
+      {
+        key: "form",
+        component: "CollectionForm",
+        properties: { collectionId: collection.id },
+      },
+      {
+        key: "chart",
+        component: "CollectionChart",
+        properties: { collectionId: collection.id, field: "rating" },
+      },
+    ];
+    const provider: import("../apps/web/src/features/providers/public").ModelProvider =
+      {
+        id: "scripted-benchmark",
+        capabilities: { streaming: true, tools: true, hostedMcp: false },
+        async *stream(request) {
+          const invoke = (id: string, toolId: string, args: unknown) => ({
+            type: "call" as const,
+            id,
+            name: "invoke_tool",
+            args: { toolId, arguments: args },
+          });
+          if (step === 0)
+            yield {
+              type: "call",
+              id: "find-tools",
+              name: "search_tools",
+              args: { query: "UI components build batch" },
+            };
+          else if (step === 1) {
+            assert.match(JSON.stringify(request.messages), /add_ui_components/);
+            yield {
+              type: "call",
+              id: "describe-search",
+              name: "describe_tool",
+              args: { toolId: "search_ui_components" },
+            };
+          } else if (step === 2)
+            yield invoke("find-components", "search_ui_components", {
+              query: "movies heading table form chart",
+            });
+          else if (step === 3) {
+            assert.match(
+              JSON.stringify(request.messages),
+              /requiredProperties/,
+            );
+            yield {
+              type: "call",
+              id: "describe-add",
+              name: "describe_tool",
+              args: { toolId: "add_ui_components" },
+            };
+          } else if (step === 4)
+            yield invoke("one-batch", "add_ui_components", {
+              workspaceId: workspace.id,
+              revision: 1,
+              components,
+            });
+          else {
+            const tools = request.messages.filter((m) => m.role === "tool");
+            result = (tools.at(-1)!.content as any)[0].output.value;
+            assert.equal(result.ok, true);
+            assert.equal(result.data.components.length, 4);
+            assert.equal(result.data.revision, 2);
+            assert.equal(result.data.definition, undefined);
+            yield {
+              type: "text",
+              text: "Movie interface created in one batch.",
+            };
+          }
+          step++;
+          yield { type: "usage", input: 10, output: 5, reason: "stop" };
+        },
+      };
+    const events: any[] = [];
+    await new AgentOrchestrator(provider, executor, store).run(
+      {
+        turnId,
+        workspaceId: workspace.id,
+        conversationId: conversation.id,
+        model: "fixture",
+        apiKey: "fixture-no-network",
+        history: [
+          {
+            role: "user",
+            content:
+              "Create a movie-ranking interface with the existing Movies collection",
+          },
+        ],
+        signal: new AbortController().signal,
+      },
+      (e) => events.push(e),
+    );
+    assert.ok(result?.ok);
+    const saved = await service.workspace(workspace.id);
+    assert.equal(saved.revision, 2);
+    assert.equal((await service.inspect(workspace.id))[0].components.length, 5);
+    assert.ok(
+      saved.interface.messages.every((message) => message.version === "v0.9.1"),
+    );
+    assert.equal(events.filter((e) => e.type === "mutation").length, 1);
+    const journal = (
+      await db.from("messages").select("content").eq("turn_id", turnId)
+    ).data!.flatMap((row) => row.content);
+    assert.equal(
+      journal.filter(
+        (b: any) => b.type === "tool_call" && b.toolId === "add_ui_components",
+      ).length,
+      1,
+    );
+    assert.equal(
+      journal.filter(
+        (b: any) =>
+          b.type === "tool_result" &&
+          b.toolId === "add_ui_components" &&
+          b.result.ok,
+      ).length,
+      1,
+    );
+    const headingId = result.data.components.find(
+      (c: any) => c.key === "heading",
+    ).id;
+    const updated = await executor.execute("update_ui_component", {
+      workspaceId: workspace.id,
+      revision: 2,
+      componentId: headingId,
+      properties: { text: "My ranked movies" },
+      placement: { parentId: "root", index: 3 },
+    });
+    assert.equal(updated.ok, true);
+    assert.equal((await service.workspace(workspace.id)).revision, 3);
+    assert.equal(
+      (await service.inspect(workspace.id))[0].components.find(
+        (c) => c.id === headingId,
+      )!.text,
+      "My ranked movies",
+    );
+    assert.deepEqual(
+      await service.records(workspace.id, collection.id),
+      originalRecords,
+    );
+    assert.equal(
+      (await service.record(workspace.id, collection.id, record.id)).data.title,
+      "Arrival",
+    );
+    const stale = await executor.execute("add_ui_components", {
+      workspaceId: workspace.id,
+      revision: 1,
+      components,
+    });
+    assert.equal(!stale.ok && stale.error.code, "conflict");
+    const other = createWorkspaceServices(client(b), b);
+    await assert.rejects(
+      () =>
+        other.addUiComponents({
+          workspaceId: workspace.id,
+          revision: 3,
+          components,
+        }),
+      /not found/,
+    );
+    await assert.rejects(
+      () =>
+        other.updateUiComponent({
+          workspaceId: workspace.id,
+          revision: 3,
+          componentId: headingId,
+          properties: { text: "Unauthorized" },
+        }),
+      /not found/,
+    );
+    const table = result.data.components.find((c: any) => c.key === "table").id;
+    const invalid = await executor.execute("update_ui_component", {
+      workspaceId: workspace.id,
+      revision: 3,
+      componentId: table,
+      properties: { columns: ["title"] },
+    });
+    assert.equal(invalid.ok, false);
+    const foreign = await service.create("Foreign movie data");
+    const foreignCollection = await service.createCollection(foreign.id, {
+      name: "Other",
+      fields: [
+        { key: "title", label: "Title", type: "string", required: true },
+      ],
+    });
+    const invalidBinding = await executor.execute("add_ui_components", {
+      workspaceId: workspace.id,
+      revision: 3,
+      components: [
+        {
+          component: "DataTable",
+          properties: { collectionId: foreignCollection.id },
+        },
+      ],
+    });
+    assert.equal(invalidBinding.ok, false);
+    const noWrite = new ToolExecutor(createToolRegistry(), {
+      service,
+      permissions: new Set(["read"]),
+    });
+    assert.equal(
+      (
+        await noWrite.execute("add_ui_components", {
+          workspaceId: workspace.id,
+          revision: 3,
+          components,
+        })
+      ).ok,
+      false,
+    );
+    assert.equal((await service.workspace(workspace.id)).revision, 3);
+    assert.deepEqual(
+      await service.records(workspace.id, collection.id),
+      originalRecords,
+    );
+  },
+);

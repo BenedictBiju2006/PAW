@@ -159,7 +159,7 @@ export async function inspectResource(uri: string, context: ToolContext) {
       uri,
       kind: "catalog",
       schema: service.catalog(),
-      operations: ["get_catalog", "inspect_component"],
+      operations: ["search_ui_components", "get_catalog", "inspect_component"],
     };
   const match = /^paw:\/\/workspaces\/([0-9a-f-]{36})(?:\/(.*))?$/.exec(uri);
   if (!match || !z.uuid().safeParse(match[1]).success)
@@ -191,6 +191,8 @@ export async function inspectResource(uri: string, context: ToolContext) {
       definition: workspace.interface,
       error: workspace.interfaceError,
       operations: [
+        "add_ui_components",
+        "update_ui_component",
         "apply_interface_messages",
         "save_interface",
         "list_revisions",
@@ -263,7 +265,11 @@ export async function inspectResource(uri: string, context: ToolContext) {
       component,
       schema: catalogComponents()[component.component],
       relationships: { interface: `${base}/interface` },
-      operations: ["apply_interface_messages", "inspect_component"],
+      operations: [
+        "update_ui_component",
+        "apply_interface_messages",
+        "inspect_component",
+      ],
     };
   }
   throw new ServiceError("Invalid resource identifier.");
