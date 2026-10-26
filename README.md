@@ -4,7 +4,6 @@
 
 PAW is an experimental full-stack application where AI agents can discover available tools, organize structured data, and build usable interfaces through conversation. Unlike a conventional chatbot, each workspace has durable data, a configurable interface, and multiple conversations that operate on the same state.
 
-![PAW workspace with chat and interface](docs/verification/feature-refactor/after/desktop-split.png)
 
 ## Features
 
