@@ -36,7 +36,7 @@ npm run dev
 
 Configure `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` in `apps/web/.env.local`. The UI runs at `http://localhost:3000`.
 
-**Database setup:** PAW requires the database schema and migrations under `supabase/migrations`. A historical conversations migration is not currently included in the repository, so a fresh Supabase project requires that migration to be recovered before all features can run. See the migration history in the source and do not apply test fixtures to a hosted database.
+**Database setup:** PAW requires the database schema and migrations under `supabase/migrations`. 
 
 For AI features, configure the server-only Supabase credential and `PAW_CREDENTIAL_ENCRYPTION_KEY` as described in `apps/web/.env.example`, then add your model-provider API key through AI settings. API usage may incur provider charges.
 
@@ -52,5 +52,13 @@ npm run build
 Integration and browser suites are available through `npm run test:integration` and `npm run test:browser` (Docker required).
 
 ---
+
+## Development Approach
+
+PAW is one of my first AI-first software development projects, exploring how AI can be integrated into the engineering process itself.
+
+I used AI extensively to assist with implementation, refactoring, testing, and iteration, while retaining responsibility for architectural decisions, system design, technical direction, and verifying correctness.
+
+The project is as much an exploration of AI-assisted software engineering as it is an experiment in building persistent agentic applications.
 
 **Status:** Active personal project / prototype. PAW explores how general-purpose AI models can assemble useful software workflows from a constrained, reusable set of tools and UI components.
