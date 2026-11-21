@@ -10,3 +10,4 @@ test-results/
 /supabase/.branches/
 /apps/web/next-env.d.ts
 .venv/
+experiments/translator/models/
