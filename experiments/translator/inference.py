@@ -1,7 +1,7 @@
 import torch
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 
-MODEL_ID = "google/flan-t5-small"
+MODEL_ID = "models/t5-small-finetuned"
 DEVICE = "cpu"
 tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
 model = AutoModelForSeq2SeqLM.from_pretrained(MODEL_ID).to(DEVICE)

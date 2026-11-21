@@ -2,4 +2,4 @@ root ::= " "? instruction
 instruction ::= action " " target " " name
 action ::= "create" | "update" | "delete"
 target ::= "collection" | "record" | "interface"
-name ::= "NAME_0"
+name ::= "NAME"

@@ -2,7 +2,7 @@ from pathlib import Path
 from transformers_cfg.grammar_utils import IncrementalGrammarConstraint
 from transformers_cfg.generation.logits_process import GrammarConstrainedLogitsProcessor
 
-from t5small import tokenizer, generate
+from models.inference import tokenizer, generate
 
 from transformers_cfg.tokenization.byte_trie import ByteTrie
 from transformers_cfg.tokenization.middle.TokenizerMiddleMapping import TokenizerMiddleMapping
@@ -32,18 +32,35 @@ def build_token_trie(tokenizer, mapping):
 
     return trie
 
-GRAMMAR = (Path(__file__).parent / "paw.ebnf").read_text(encoding="utf-8")
+import json
+import re
+
+def build_grammar(prompt: str) -> str:
+    names = list(dict.fromkeys(re.findall(r'"([A-Za-z0-9_ ]+)"', prompt)))
+
+    if not names:
+        raise ValueError("No quoted names found")
+
+    name_options = " | ".join(json.dumps(f'"{name}"') for name in names)
+
+    return f'''
+root ::= " "? instruction
+instruction ::= action " " target " " name
+action ::= "create" | "update" | "delete"
+target ::= "collection" | "record" | "interface"
+name ::= {name_options}
+'''
 
 mapping = StatelessT5Mapping(tokenizer)
 trie = build_token_trie(tokenizer, mapping)
 
 
 def generate_constrained(prompt):
-    grammar = IncrementalGrammarConstraint(GRAMMAR, "root", tokenizer, trie=trie, homomorphism=mapping)
+    grammar_string = build_grammar(prompt)
+    grammar = IncrementalGrammarConstraint(grammar_string, "root", tokenizer, trie=trie, homomorphism=mapping)
     processor = GrammarConstrainedLogitsProcessor(grammar, valid_token_start_idx=1)
 
     return generate(prompt, logits_processor=[processor])
-
 
 
 if __name__ == "__main__":

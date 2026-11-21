@@ -1,0 +1,9 @@
+model,mode,category,seconds,examples,exact_match,supported_examples,unsupported_examples,valid_format,action_accuracy,target_accuracy,name_accuracy,rejection_accuracy
+baseline,unconstrained,overall,78.08,2000,0.0,1900,100,0.0,0.0,0.0,0.0,0.0
+baseline,unconstrained,unspecified,78.08,2000,0.0,1900,100,0.0,0.0,0.0,0.0,0.0
+baseline,constrained,overall,35.264,1900,37.95,1900,0,100.0,71.95,58.32,90.16,
+baseline,constrained,unspecified,35.264,1900,37.95,1900,0,100.0,71.95,58.32,90.16,
+finetuned,unconstrained,overall,33.944,2000,82.25,1900,100,96.74,95.42,94.32,90.21,0.0
+finetuned,unconstrained,unspecified,33.944,2000,82.25,1900,100,96.74,95.42,94.32,90.21,0.0
+finetuned,constrained,overall,36.002,1900,87.37,1900,0,100.0,98.58,94.89,93.63,
+finetuned,constrained,unspecified,36.002,1900,87.37,1900,0,100.0,98.58,94.89,93.63,

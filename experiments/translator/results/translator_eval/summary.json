@@ -1,0 +1,118 @@
+{
+  "dataset": "data/paw_translator_test_2000.jsonl",
+  "device": "cpu",
+  "models": {
+    "baseline": {
+      "unconstrained": {
+        "seconds": 78.08,
+        "groups": {
+          "overall": {
+            "examples": 2000,
+            "exact_match": 0.0,
+            "supported_examples": 1900,
+            "unsupported_examples": 100,
+            "valid_format": 0.0,
+            "action_accuracy": 0.0,
+            "target_accuracy": 0.0,
+            "name_accuracy": 0.0,
+            "rejection_accuracy": 0.0
+          },
+          "unspecified": {
+            "examples": 2000,
+            "exact_match": 0.0,
+            "supported_examples": 1900,
+            "unsupported_examples": 100,
+            "valid_format": 0.0,
+            "action_accuracy": 0.0,
+            "target_accuracy": 0.0,
+            "name_accuracy": 0.0,
+            "rejection_accuracy": 0.0
+          }
+        }
+      },
+      "constrained": {
+        "seconds": 35.264,
+        "groups": {
+          "overall": {
+            "examples": 1900,
+            "exact_match": 37.95,
+            "supported_examples": 1900,
+            "unsupported_examples": 0,
+            "valid_format": 100.0,
+            "action_accuracy": 71.95,
+            "target_accuracy": 58.32,
+            "name_accuracy": 90.16,
+            "rejection_accuracy": null
+          },
+          "unspecified": {
+            "examples": 1900,
+            "exact_match": 37.95,
+            "supported_examples": 1900,
+            "unsupported_examples": 0,
+            "valid_format": 100.0,
+            "action_accuracy": 71.95,
+            "target_accuracy": 58.32,
+            "name_accuracy": 90.16,
+            "rejection_accuracy": null
+          }
+        }
+      }
+    },
+    "finetuned": {
+      "unconstrained": {
+        "seconds": 33.944,
+        "groups": {
+          "overall": {
+            "examples": 2000,
+            "exact_match": 82.25,
+            "supported_examples": 1900,
+            "unsupported_examples": 100,
+            "valid_format": 96.74,
+            "action_accuracy": 95.42,
+            "target_accuracy": 94.32,
+            "name_accuracy": 90.21,
+            "rejection_accuracy": 0.0
+          },
+          "unspecified": {
+            "examples": 2000,
+            "exact_match": 82.25,
+            "supported_examples": 1900,
+            "unsupported_examples": 100,
+            "valid_format": 96.74,
+            "action_accuracy": 95.42,
+            "target_accuracy": 94.32,
+            "name_accuracy": 90.21,
+            "rejection_accuracy": 0.0
+          }
+        }
+      },
+      "constrained": {
+        "seconds": 36.002,
+        "groups": {
+          "overall": {
+            "examples": 1900,
+            "exact_match": 87.37,
+            "supported_examples": 1900,
+            "unsupported_examples": 0,
+            "valid_format": 100.0,
+            "action_accuracy": 98.58,
+            "target_accuracy": 94.89,
+            "name_accuracy": 93.63,
+            "rejection_accuracy": null
+          },
+          "unspecified": {
+            "examples": 1900,
+            "exact_match": 87.37,
+            "supported_examples": 1900,
+            "unsupported_examples": 0,
+            "valid_format": 100.0,
+            "action_accuracy": 98.58,
+            "target_accuracy": 94.89,
+            "name_accuracy": 93.63,
+            "rejection_accuracy": null
+          }
+        }
+      }
+    }
+  }
+}
